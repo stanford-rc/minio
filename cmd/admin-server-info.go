@@ -28,8 +28,8 @@ import (
 	"time"
 
 	"github.com/minio/madmin-go/v3"
-	"github.com/minio/minio/internal/config"
-	"github.com/minio/minio/internal/kms"
+	"github.com/stanford-rc/minio/internal/config"
+	"github.com/stanford-rc/minio/internal/kms"
 	xnet "github.com/minio/pkg/v3/net"
 )
 

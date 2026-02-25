@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/minio/minio/internal/config"
+	"github.com/stanford-rc/minio/internal/config"
 	"github.com/minio/pkg/v3/env"
 )
 

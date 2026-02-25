@@ -24,7 +24,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/minio/minio/internal/hash"
+	"github.com/stanford-rc/minio/internal/hash"
 )
 
 var errConfigNotFound = errors.New("config file not found")

@@ -29,10 +29,10 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/minio/minio/internal/event"
-	"github.com/minio/minio/internal/logger"
-	"github.com/minio/minio/internal/once"
-	"github.com/minio/minio/internal/store"
+	"github.com/stanford-rc/minio/internal/event"
+	"github.com/stanford-rc/minio/internal/logger"
+	"github.com/stanford-rc/minio/internal/once"
+	"github.com/stanford-rc/minio/internal/store"
 	xnet "github.com/minio/pkg/v3/net"
 )
 

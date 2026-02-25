@@ -26,10 +26,10 @@ import (
 
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/madmin-go/v3/logger/log"
-	"github.com/minio/minio/internal/logger"
-	"github.com/minio/minio/internal/logger/target/console"
-	types "github.com/minio/minio/internal/logger/target/loggertypes"
-	"github.com/minio/minio/internal/pubsub"
+	"github.com/stanford-rc/minio/internal/logger"
+	"github.com/stanford-rc/minio/internal/logger/target/console"
+	types "github.com/stanford-rc/minio/internal/logger/target/loggertypes"
+	"github.com/stanford-rc/minio/internal/pubsub"
 	xnet "github.com/minio/pkg/v3/net"
 )
 

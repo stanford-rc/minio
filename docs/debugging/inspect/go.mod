@@ -1,4 +1,4 @@
-module github.com/minio/minio/docs/debugging/inspect
+module github.com/stanford-rc/minio/docs/debugging/inspect
 
 go 1.23.0
 
@@ -23,3 +23,15 @@ require (
 	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 )
+
+replace github.com/minio/colorjson => github.com/stanford-rc/minio-colorjson v1.0.8
+
+replace github.com/minio/madmin-go/v3 => github.com/stanford-rc/madmin-go/v3 v3.0.88
+
+replace github.com/minio/md5-simd => github.com/stanford-rc/minio-md5-simd v1.1.2
+
+replace github.com/minio/minio-go/v7 => github.com/stanford-rc/minio-go/v7 v7.0.83-0.20241230094935-5757f2c8544a
+
+replace github.com/minio/mux => github.com/stanford-rc/minio-mux v1.8.2
+
+replace github.com/minio/pkg/v3 => github.com/stanford-rc/minio-pkg/v3 v3.0.28

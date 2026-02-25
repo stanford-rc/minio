@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/dustin/go-humanize"
-	xhttp "github.com/minio/minio/internal/http"
+	xhttp "github.com/stanford-rc/minio/internal/http"
 )
 
 // TestNewMultipartUploadConditionalWithReadQuorumFailure tests that conditional

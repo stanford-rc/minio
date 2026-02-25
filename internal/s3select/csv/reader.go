@@ -27,8 +27,8 @@ import (
 	"unicode/utf8"
 
 	csv "github.com/minio/csvparser"
-	"github.com/minio/minio/internal/bpool"
-	"github.com/minio/minio/internal/s3select/sql"
+	"github.com/stanford-rc/minio/internal/bpool"
+	"github.com/stanford-rc/minio/internal/s3select/sql"
 )
 
 // Reader - CSV record reader for S3Select.

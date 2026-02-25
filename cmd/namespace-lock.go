@@ -28,9 +28,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/minio/minio/internal/dsync"
-	"github.com/minio/minio/internal/logger"
-	"github.com/minio/minio/internal/lsync"
+	"github.com/stanford-rc/minio/internal/dsync"
+	"github.com/stanford-rc/minio/internal/logger"
+	"github.com/stanford-rc/minio/internal/lsync"
 )
 
 // local lock servers

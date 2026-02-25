@@ -1,2 +1,2 @@
-github.com/minio/pkg/v3 v3.0.1 h1:qts6g9rYjAdeomRdwjnMc1IaQ6KbaJs3dwqBntXziaw=
-github.com/minio/pkg/v3 v3.0.1/go.mod h1:53gkSUVHcfYoskOs5YAJ3D99nsd2SKru90rdE9whlXU=
+github.com/stanford-rc/minio-pkg/v3 v3.0.1 h1:Ljz6p3N+sf2qFDh6OIbFcvhhVzCnQ8CHXJGy7ogJ4+w=
+github.com/stanford-rc/minio-pkg/v3 v3.0.1/go.mod h1:53gkSUVHcfYoskOs5YAJ3D99nsd2SKru90rdE9whlXU=

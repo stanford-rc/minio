@@ -36,8 +36,8 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	xhttp "github.com/minio/minio/internal/http"
-	"github.com/minio/minio/internal/logger"
+	xhttp "github.com/stanford-rc/minio/internal/http"
+	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/minio/pkg/v3/env"
 	xnet "github.com/minio/pkg/v3/net"
 	"github.com/minio/selfupdate"

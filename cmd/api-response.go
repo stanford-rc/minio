@@ -29,12 +29,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/minio/minio/internal/amztime"
-	"github.com/minio/minio/internal/crypto"
-	"github.com/minio/minio/internal/handlers"
-	"github.com/minio/minio/internal/hash"
-	xhttp "github.com/minio/minio/internal/http"
-	"github.com/minio/minio/internal/logger"
+	"github.com/stanford-rc/minio/internal/amztime"
+	"github.com/stanford-rc/minio/internal/crypto"
+	"github.com/stanford-rc/minio/internal/handlers"
+	"github.com/stanford-rc/minio/internal/hash"
+	xhttp "github.com/stanford-rc/minio/internal/http"
+	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/minio/pkg/v3/policy"
 	xxml "github.com/minio/xxml"
 )

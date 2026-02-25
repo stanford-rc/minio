@@ -29,9 +29,9 @@ import (
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/minio/minio/internal/bucket/replication"
-	"github.com/minio/minio/internal/crypto"
-	"github.com/minio/minio/internal/kms"
+	"github.com/stanford-rc/minio/internal/bucket/replication"
+	"github.com/stanford-rc/minio/internal/crypto"
+	"github.com/stanford-rc/minio/internal/kms"
 )
 
 const (

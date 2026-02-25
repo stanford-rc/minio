@@ -1,4 +1,4 @@
-module github.com/minio/minio/docs/debugging/s3-verify
+module github.com/stanford-rc/minio/docs/debugging/s3-verify
 
 go 1.23.0
 
@@ -23,3 +23,7 @@ require (
 	golang.org/x/text v0.23.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/minio/md5-simd => github.com/stanford-rc/minio-md5-simd v1.1.2
+
+replace github.com/minio/minio-go/v7 => github.com/stanford-rc/minio-go/v7 v7.0.83

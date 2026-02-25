@@ -18,7 +18,7 @@
 package opa
 
 import (
-	"github.com/minio/minio/internal/config"
+	"github.com/stanford-rc/minio/internal/config"
 )
 
 // Legacy OPA envs

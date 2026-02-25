@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	xioutil "github.com/minio/minio/internal/ioutil"
+	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 )
 
 const (

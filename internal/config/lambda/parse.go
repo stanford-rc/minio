@@ -23,10 +23,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/minio/minio/internal/config"
-	"github.com/minio/minio/internal/config/lambda/event"
-	"github.com/minio/minio/internal/config/lambda/target"
-	"github.com/minio/minio/internal/logger"
+	"github.com/stanford-rc/minio/internal/config"
+	"github.com/stanford-rc/minio/internal/config/lambda/event"
+	"github.com/stanford-rc/minio/internal/config/lambda/target"
+	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/minio/pkg/v3/env"
 	xnet "github.com/minio/pkg/v3/net"
 )

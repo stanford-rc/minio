@@ -1,4 +1,4 @@
-module github.com/minio/minio
+module github.com/stanford-rc/minio
 
 go 1.24.0
 
@@ -274,3 +274,55 @@ require (
 	google.golang.org/grpc v1.72.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 )
+
+replace github.com/minio/cli => github.com/stanford-rc/minio-cli v1.24.2
+
+replace github.com/minio/colorjson => github.com/stanford-rc/minio-colorjson v1.0.8
+
+replace github.com/minio/console => github.com/stanford-rc/minio-console v1.7.7-0.20250905210349-2017f33b26e1
+
+replace github.com/minio/crc64nvme => github.com/stanford-rc/minio-crc64nvme v1.0.1
+
+replace github.com/minio/csvparser => github.com/stanford-rc/minio-csvparser v1.0.0
+
+replace github.com/minio/dnscache => github.com/stanford-rc/minio-dnscache v0.1.1
+
+replace github.com/minio/dperf => github.com/stanford-rc/minio-dperf v0.6.3
+
+replace github.com/minio/filepath => github.com/stanford-rc/minio-filepath v1.0.0
+
+replace github.com/minio/highwayhash => github.com/stanford-rc/minio-highwayhash v1.0.3
+
+replace github.com/minio/kes => github.com/stanford-rc/minio-kes v0.24.0
+
+replace github.com/minio/kms-go/kes => github.com/stanford-rc/minio-kms-go/kes v0.3.1
+
+replace github.com/minio/kms-go/kms => github.com/stanford-rc/minio-kms-go/kms v0.5.1-0.20250225090116-4e64ce8d0f35
+
+replace github.com/minio/madmin-go/v3 => github.com/stanford-rc/madmin-go/v3 v3.0.109
+
+replace github.com/minio/mc => github.com/stanford-rc/minio-mc v0.0.0-20250313080218-cf909e1063a9
+
+replace github.com/minio/md5-simd => github.com/stanford-rc/minio-md5-simd v1.1.2
+
+replace github.com/minio/minio-go/v6 => github.com/stanford-rc/minio-go/v6 v6.0.46
+
+replace github.com/minio/minio-go/v7 => github.com/stanford-rc/minio-go/v7 v7.0.91
+
+replace github.com/minio/mux => github.com/stanford-rc/minio-mux v1.9.2
+
+replace github.com/minio/pkg/v3 => github.com/stanford-rc/minio-pkg/v3 v3.1.3
+
+replace github.com/minio/selfupdate => github.com/stanford-rc/minio-selfupdate v0.6.0
+
+replace github.com/minio/sha256-simd => github.com/stanford-rc/minio-sha256-simd v0.1.1
+
+replace github.com/minio/simdjson-go => github.com/stanford-rc/minio-simdjson-go v0.4.5
+
+replace github.com/minio/sio => github.com/stanford-rc/minio-sio v0.4.1
+
+replace github.com/minio/websocket => github.com/stanford-rc/minio-websocket v1.6.0
+
+replace github.com/minio/xxml => github.com/stanford-rc/minio-xxml v0.0.3
+
+replace github.com/minio/zipindex => github.com/stanford-rc/minio-zipindex v0.4.0
