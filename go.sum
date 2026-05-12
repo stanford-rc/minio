@@ -595,8 +595,8 @@ github.com/stanford-rc/minio-cli v1.24.2-stanford-rc h1:kb0aulV3mkvSzZVwwGizhiZL
 github.com/stanford-rc/minio-cli v1.24.2-stanford-rc/go.mod h1:huCjisqLEt7wq6uXNycDRfKmTkBNK0G92sF0priUVpw=
 github.com/stanford-rc/minio-colorjson v1.0.8-stanford-rc h1:jRvk2GN+5TFeEqh0Q8xXttka2ozSexnCgYbCWC0Sq80=
 github.com/stanford-rc/minio-colorjson v1.0.8-stanford-rc/go.mod h1:UWyxIdS0AQf3ZtLoCoIBkKun0rQ3RwRKTg9Ncd/ALkI=
-github.com/stanford-rc/minio-console v1.9.2-stanford-rc h1:LGkjgLsFIH9rLLG82DCH4+EJ1b72wS+V+mHyXfVlps4=
-github.com/stanford-rc/minio-console v1.9.2-stanford-rc/go.mod h1:WD1k56+97VBq8oDEPBUE5Cxi6aFJqJfqbCMSCjuBp28=
+github.com/stanford-rc/minio-console v1.9.3-stanford-rc h1:3onW8TCwTftgpUshzJ1Le/UL98+1c0DEhXWv7Vf99Og=
+github.com/stanford-rc/minio-console v1.9.3-stanford-rc/go.mod h1:WD1k56+97VBq8oDEPBUE5Cxi6aFJqJfqbCMSCjuBp28=
 github.com/stanford-rc/minio-crc64nvme v1.0.1-stanford-rc h1:hI2Pl2KQHosQlEs0uMaPxR3SgAOvxstSh3x492M4Enw=
 github.com/stanford-rc/minio-crc64nvme v1.0.1-stanford-rc/go.mod h1:Ue4g8hDk8gYwTXjpk5WhSym61f0lgfi/y31hIFkq7kE=
 github.com/stanford-rc/minio-csvparser v1.0.0-stanford-rc h1:YyuSa53fZSIym+j7aNTeOOGngJgJ659xvwu3rHWHi98=

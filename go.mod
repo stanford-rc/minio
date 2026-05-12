@@ -293,7 +293,7 @@ replace github.com/minio/cli => github.com/stanford-rc/minio-cli v1.24.2-stanfor
 
 replace github.com/minio/colorjson => github.com/stanford-rc/minio-colorjson v1.0.8-stanford-rc
 
-replace github.com/minio/console => github.com/stanford-rc/minio-console v1.9.2-stanford-rc
+replace github.com/minio/console => github.com/stanford-rc/minio-console v1.9.3-stanford-rc
 
 replace github.com/minio/crc64nvme => github.com/stanford-rc/minio-crc64nvme v1.0.1-stanford-rc
 
