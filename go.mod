@@ -206,6 +206,7 @@ require (
 	github.com/jedib0t/go-pretty/v6 v6.7.8 // indirect
 	github.com/jessevdk/go-flags v1.6.1 // indirect
 	github.com/juju/ratelimit v1.0.2 // indirect
+	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
@@ -312,15 +313,15 @@ replace github.com/minio/kms-go/kes => github.com/stanford-rc/minio-kms-go/kes v
 
 replace github.com/minio/kms-go/kms => github.com/stanford-rc/minio-kms-go/kms v0.5.1-stanford-rc
 
-replace github.com/minio/madmin-go/v3 => github.com/stanford-rc/madmin-go/v3 v3.0.109-stanford-rc
+replace github.com/minio/madmin-go/v3 => github.com/stanford-rc/madmin-go/v3 v3.0.110-stanford-rc
 
-replace github.com/minio/mc => github.com/stanford-rc/minio-mc v0.0.0-20250313080218-cf909e1063a9
+replace github.com/minio/mc => github.com/stanford-rc/minio-mc v0.0.0-20251106162529-77f82e18b540
 
 replace github.com/minio/md5-simd => github.com/stanford-rc/minio-md5-simd v1.1.2-stanford-rc
 
 replace github.com/minio/minio-go/v6 => github.com/stanford-rc/minio-go/v6 v6.0.46-stanford-rc
 
-replace github.com/minio/minio-go/v7 => github.com/stanford-rc/minio-go/v7 v7.0.91-stanford-rc
+replace github.com/minio/minio-go/v7 => github.com/stanford-rc/minio-go/v7 v7.0.99-stanford-rc
 
 replace github.com/minio/mux => github.com/stanford-rc/minio-mux v1.9.2-stanford-rc
 
