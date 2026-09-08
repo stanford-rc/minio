@@ -22,8 +22,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/stanford-rc/minio/internal/config"
 	"github.com/minio/pkg/v3/env"
+	"github.com/stanford-rc/minio/internal/config"
 )
 
 // Compression environment variables

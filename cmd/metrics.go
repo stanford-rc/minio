@@ -21,12 +21,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/stanford-rc/minio/internal/auth"
-	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/stanford-rc/minio/internal/mcontext"
 	"github.com/minio/pkg/v3/policy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
+	"github.com/stanford-rc/minio/internal/auth"
+	"github.com/stanford-rc/minio/internal/logger"
+	"github.com/stanford-rc/minio/internal/mcontext"
 )
 
 var (

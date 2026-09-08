@@ -26,8 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/minio/pkg/v3/console"
+	"github.com/stanford-rc/minio/internal/logger"
 )
 
 // a bucketMetacache keeps track of all caches generated

@@ -28,8 +28,8 @@ import (
 	"time"
 
 	"github.com/minio/madmin-go/v3"
-	"github.com/stanford-rc/minio/internal/grid"
 	"github.com/minio/pkg/v3/sync/errgroup"
+	"github.com/stanford-rc/minio/internal/grid"
 )
 
 var errPeerOffline = errors.New("peer is offline")

@@ -60,13 +60,13 @@ import (
 
 	"github.com/minio/minio-go/v7/pkg/s3utils"
 	"github.com/minio/minio-go/v7/pkg/signer"
+	"github.com/minio/mux"
+	"github.com/minio/pkg/v3/policy"
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/crypto"
 	"github.com/stanford-rc/minio/internal/hash"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/mux"
-	"github.com/minio/pkg/v3/policy"
 )
 
 // TestMain to set up global env.

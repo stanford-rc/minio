@@ -20,8 +20,8 @@ package cmd
 import (
 	"net/http"
 
-	"github.com/stanford-rc/minio/internal/grid"
 	"github.com/minio/mux"
+	"github.com/stanford-rc/minio/internal/grid"
 )
 
 // Composed function registering routers for only distributed Erasure setup.

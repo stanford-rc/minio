@@ -28,12 +28,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/minio/pkg/v3/policy"
+	"github.com/minio/zipindex"
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/crypto"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
-	"github.com/minio/pkg/v3/policy"
-	"github.com/minio/zipindex"
 )
 
 const (

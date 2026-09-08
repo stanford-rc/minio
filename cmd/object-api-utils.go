@@ -41,6 +41,8 @@ import (
 	"github.com/klauspost/compress/s2"
 	"github.com/klauspost/readahead"
 	"github.com/minio/minio-go/v7/pkg/s3utils"
+	"github.com/minio/pkg/v3/trie"
+	"github.com/minio/pkg/v3/wildcard"
 	"github.com/stanford-rc/minio/internal/config/compress"
 	"github.com/stanford-rc/minio/internal/config/dns"
 	"github.com/stanford-rc/minio/internal/config/storageclass"
@@ -49,8 +51,6 @@ import (
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/trie"
-	"github.com/minio/pkg/v3/wildcard"
 	"github.com/valyala/bytebufferpool"
 )
 

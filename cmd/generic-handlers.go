@@ -32,8 +32,8 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/minio/minio-go/v7/pkg/s3utils"
 	"github.com/minio/minio-go/v7/pkg/set"
-	"github.com/stanford-rc/minio/internal/grid"
 	xnet "github.com/minio/pkg/v3/net"
+	"github.com/stanford-rc/minio/internal/grid"
 
 	"github.com/stanford-rc/minio/internal/amztime"
 	"github.com/stanford-rc/minio/internal/config/dns"

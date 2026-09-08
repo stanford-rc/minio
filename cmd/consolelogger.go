@@ -26,11 +26,11 @@ import (
 
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/madmin-go/v3/logger/log"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/logger/target/console"
 	types "github.com/stanford-rc/minio/internal/logger/target/loggertypes"
 	"github.com/stanford-rc/minio/internal/pubsub"
-	xnet "github.com/minio/pkg/v3/net"
 )
 
 // number of log messages to buffer

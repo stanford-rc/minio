@@ -29,13 +29,13 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
+	xnet "github.com/minio/pkg/v3/net"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/stan.go"
 	"github.com/stanford-rc/minio/internal/event"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/once"
 	"github.com/stanford-rc/minio/internal/store"
-	xnet "github.com/minio/pkg/v3/net"
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/stan.go"
 )
 
 // NATS related constants

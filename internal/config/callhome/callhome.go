@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/stanford-rc/minio/internal/config"
 	"github.com/minio/pkg/v3/env"
+	"github.com/stanford-rc/minio/internal/config"
 )
 
 // Callhome related keys

@@ -28,9 +28,9 @@ import (
 	"time"
 
 	"github.com/minio/madmin-go/v3"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/kms"
-	xnet "github.com/minio/pkg/v3/net"
 )
 
 // getLocalServerProperty - returns madmin.ServerProperties for only the

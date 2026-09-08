@@ -28,13 +28,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/minio/pkg/v3/env"
+	xnet "github.com/minio/pkg/v3/net"
+	"github.com/rabbitmq/amqp091-go"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/event"
 	"github.com/stanford-rc/minio/internal/event/target"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/env"
-	xnet "github.com/minio/pkg/v3/net"
-	"github.com/rabbitmq/amqp091-go"
 )
 
 const (

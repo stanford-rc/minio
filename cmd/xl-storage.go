@@ -47,10 +47,10 @@ import (
 	"github.com/stanford-rc/minio/internal/cachevalue"
 	"github.com/stanford-rc/minio/internal/config/storageclass"
 
+	"github.com/pkg/xattr"
 	"github.com/stanford-rc/minio/internal/disk"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/pkg/xattr"
 )
 
 const (

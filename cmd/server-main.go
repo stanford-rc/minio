@@ -43,6 +43,8 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/minio/minio-go/v7/pkg/set"
+	"github.com/minio/pkg/v3/certs"
+	"github.com/minio/pkg/v3/env"
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/bucket/bandwidth"
 	"github.com/stanford-rc/minio/internal/color"
@@ -53,8 +55,6 @@ import (
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/certs"
-	"github.com/minio/pkg/v3/env"
 	"gopkg.in/yaml.v2"
 )
 

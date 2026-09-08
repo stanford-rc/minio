@@ -29,11 +29,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/minio/pkg/v3/certs"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/config/lambda/event"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/certs"
-	xnet "github.com/minio/pkg/v3/net"
 )
 
 // Webhook constants

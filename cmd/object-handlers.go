@@ -43,6 +43,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/minio/minio-go/v7/pkg/encrypt"
 	"github.com/minio/minio-go/v7/pkg/tags"
+	"github.com/minio/mux"
+	"github.com/minio/pkg/v3/policy"
 	"github.com/stanford-rc/minio/internal/amztime"
 	"github.com/stanford-rc/minio/internal/auth"
 	sse "github.com/stanford-rc/minio/internal/bucket/encryption"
@@ -61,8 +63,6 @@ import (
 	"github.com/stanford-rc/minio/internal/kms"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/s3select"
-	"github.com/minio/mux"
-	"github.com/minio/pkg/v3/policy"
 )
 
 // supportedHeadGetReqParams - supported request parameters for GET and HEAD presigned request.

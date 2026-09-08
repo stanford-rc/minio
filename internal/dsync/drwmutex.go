@@ -27,10 +27,10 @@ import (
 	"sync"
 	"time"
 
-	xioutil "github.com/stanford-rc/minio/internal/ioutil"
-	"github.com/stanford-rc/minio/internal/mcontext"
 	"github.com/minio/pkg/v3/console"
 	"github.com/minio/pkg/v3/env"
+	xioutil "github.com/stanford-rc/minio/internal/ioutil"
+	"github.com/stanford-rc/minio/internal/mcontext"
 )
 
 // Indicator if logging is enabled.

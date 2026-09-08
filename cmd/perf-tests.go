@@ -34,9 +34,9 @@ import (
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/pkg/v3/randreader"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
-	"github.com/minio/pkg/v3/randreader"
 )
 
 // SpeedTestResult return value of the speedtest function

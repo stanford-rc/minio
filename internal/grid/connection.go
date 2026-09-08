@@ -38,11 +38,11 @@ import (
 	"github.com/gobwas/ws/wsutil"
 	"github.com/google/uuid"
 	"github.com/minio/madmin-go/v3"
+	xnet "github.com/minio/pkg/v3/net"
+	"github.com/puzpuzpuz/xsync/v3"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/pubsub"
-	xnet "github.com/minio/pkg/v3/net"
-	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/tinylib/msgp/msgp"
 	"github.com/zeebo/xxh3"
 )

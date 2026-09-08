@@ -25,11 +25,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/minio/pkg/v3/policy"
 	"github.com/stanford-rc/minio/internal/crypto"
 	"github.com/stanford-rc/minio/internal/event"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/pubsub"
-	"github.com/minio/pkg/v3/policy"
 )
 
 // EventNotifier - notifies external systems about events in MinIO.

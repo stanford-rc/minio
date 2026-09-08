@@ -52,12 +52,12 @@ import (
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	etcd "go.etcd.io/etcd/client/v3"
 
-	levent "github.com/stanford-rc/minio/internal/config/lambda/event"
-	"github.com/stanford-rc/minio/internal/event"
-	"github.com/stanford-rc/minio/internal/pubsub"
 	"github.com/minio/pkg/v3/certs"
 	"github.com/minio/pkg/v3/env"
 	xnet "github.com/minio/pkg/v3/net"
+	levent "github.com/stanford-rc/minio/internal/config/lambda/event"
+	"github.com/stanford-rc/minio/internal/event"
+	"github.com/stanford-rc/minio/internal/pubsub"
 )
 
 // minio configuration related constants.

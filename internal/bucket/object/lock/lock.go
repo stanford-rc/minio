@@ -34,8 +34,8 @@ import (
 	"github.com/stanford-rc/minio/internal/amztime"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 
-	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/minio/pkg/v3/env"
+	"github.com/stanford-rc/minio/internal/logger"
 )
 
 const (

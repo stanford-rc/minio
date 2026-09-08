@@ -42,13 +42,13 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/minio/minio-go/v7/pkg/replication"
 	"github.com/minio/minio-go/v7/pkg/set"
+	xldap "github.com/minio/pkg/v3/ldap"
+	"github.com/minio/pkg/v3/policy"
+	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/bucket/lifecycle"
 	sreplication "github.com/stanford-rc/minio/internal/bucket/replication"
 	"github.com/stanford-rc/minio/internal/logger"
-	xldap "github.com/minio/pkg/v3/ldap"
-	"github.com/minio/pkg/v3/policy"
-	"github.com/puzpuzpuz/xsync/v3"
 )
 
 const (

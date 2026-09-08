@@ -31,6 +31,8 @@ import (
 
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7/pkg/tags"
+	"github.com/minio/pkg/v3/policy"
+	"github.com/minio/sio"
 	bucketsse "github.com/stanford-rc/minio/internal/bucket/encryption"
 	"github.com/stanford-rc/minio/internal/bucket/lifecycle"
 	objectlock "github.com/stanford-rc/minio/internal/bucket/object/lock"
@@ -40,8 +42,6 @@ import (
 	"github.com/stanford-rc/minio/internal/event"
 	"github.com/stanford-rc/minio/internal/kms"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/policy"
-	"github.com/minio/sio"
 )
 
 const (

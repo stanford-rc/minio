@@ -24,9 +24,9 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/minio/sio"
 	"github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/sio"
 )
 
 const (

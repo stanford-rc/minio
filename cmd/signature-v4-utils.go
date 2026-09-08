@@ -27,11 +27,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/minio/pkg/v3/policy"
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/hash/sha256"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/policy"
 )
 
 // http Header "x-amz-content-sha256" == "UNSIGNED-PAYLOAD" indicates that the

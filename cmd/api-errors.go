@@ -43,12 +43,12 @@ import (
 	"github.com/stanford-rc/minio/internal/kms"
 	"github.com/stanford-rc/minio/internal/logger"
 
+	"github.com/minio/pkg/v3/policy"
 	objectlock "github.com/stanford-rc/minio/internal/bucket/object/lock"
 	"github.com/stanford-rc/minio/internal/bucket/versioning"
 	levent "github.com/stanford-rc/minio/internal/config/lambda/event"
 	"github.com/stanford-rc/minio/internal/event"
 	"github.com/stanford-rc/minio/internal/hash"
-	"github.com/minio/pkg/v3/policy"
 )
 
 // APIError structure

@@ -26,9 +26,9 @@ import (
 	"strings"
 
 	"github.com/minio/minio-go/v7/pkg/set"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/logger"
-	xnet "github.com/minio/pkg/v3/net"
 )
 
 var (

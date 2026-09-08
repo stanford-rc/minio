@@ -32,6 +32,9 @@ import (
 	"github.com/klauspost/compress/s2"
 	"github.com/klauspost/compress/zstd"
 	gzip "github.com/klauspost/pgzip"
+	"github.com/minio/pkg/v3/env"
+	"github.com/minio/simdjson-go"
+	"github.com/pierrec/lz4/v4"
 	"github.com/stanford-rc/minio/internal/bpool"
 	"github.com/stanford-rc/minio/internal/config"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
@@ -40,9 +43,6 @@ import (
 	"github.com/stanford-rc/minio/internal/s3select/parquet"
 	"github.com/stanford-rc/minio/internal/s3select/simdj"
 	"github.com/stanford-rc/minio/internal/s3select/sql"
-	"github.com/minio/pkg/v3/env"
-	"github.com/minio/simdjson-go"
-	"github.com/pierrec/lz4/v4"
 )
 
 type recordReader interface {

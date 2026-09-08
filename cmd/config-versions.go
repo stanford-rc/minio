@@ -18,6 +18,7 @@
 package cmd
 
 import (
+	"github.com/minio/pkg/v3/quick"
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/config/compress"
@@ -27,7 +28,6 @@ import (
 	"github.com/stanford-rc/minio/internal/config/policy/opa"
 	"github.com/stanford-rc/minio/internal/config/storageclass"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/quick"
 )
 
 // FileLogger is introduced to workaround the dependency about logrus

@@ -48,6 +48,8 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/set"
 	"github.com/minio/minio-go/v7/pkg/tags"
+	"github.com/minio/pkg/v3/policy"
+	"github.com/minio/pkg/v3/sync/errgroup"
 	"github.com/stanford-rc/minio/internal/auth"
 	sse "github.com/stanford-rc/minio/internal/bucket/encryption"
 	objectlock "github.com/stanford-rc/minio/internal/bucket/object/lock"
@@ -62,8 +64,6 @@ import (
 	"github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/kms"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/policy"
-	"github.com/minio/pkg/v3/sync/errgroup"
 )
 
 const (

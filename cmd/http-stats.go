@@ -23,8 +23,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/prometheus/client_golang/prometheus"
+	xhttp "github.com/stanford-rc/minio/internal/http"
 )
 
 // connStats - Network statistics

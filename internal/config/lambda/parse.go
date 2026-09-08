@@ -23,12 +23,12 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/minio/pkg/v3/env"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/config/lambda/event"
 	"github.com/stanford-rc/minio/internal/config/lambda/target"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/env"
-	xnet "github.com/minio/pkg/v3/net"
 )
 
 const (

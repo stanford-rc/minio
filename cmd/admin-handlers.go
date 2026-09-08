@@ -51,6 +51,10 @@ import (
 	"github.com/minio/madmin-go/v3/estream"
 	"github.com/minio/madmin-go/v3/logger/log"
 	"github.com/minio/minio-go/v7/pkg/set"
+	"github.com/minio/mux"
+	xnet "github.com/minio/pkg/v3/net"
+	"github.com/minio/pkg/v3/policy"
+	"github.com/secure-io/sio-go"
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/dsync"
 	"github.com/stanford-rc/minio/internal/grid"
@@ -59,10 +63,6 @@ import (
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/kms"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/mux"
-	xnet "github.com/minio/pkg/v3/net"
-	"github.com/minio/pkg/v3/policy"
-	"github.com/secure-io/sio-go"
 	"github.com/zeebo/xxh3"
 )
 

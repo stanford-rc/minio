@@ -23,10 +23,10 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/stanford-rc/minio/internal/config"
 	"github.com/minio/pkg/v3/env"
 	xnet "github.com/minio/pkg/v3/net"
 	"github.com/minio/pkg/v3/policy"
+	"github.com/stanford-rc/minio/internal/config"
 )
 
 // Env IAM OPA URL

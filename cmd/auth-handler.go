@@ -33,6 +33,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/minio/pkg/v3/policy"
 	"github.com/stanford-rc/minio/internal/auth"
 	objectlock "github.com/stanford-rc/minio/internal/bucket/object/lock"
 	"github.com/stanford-rc/minio/internal/etag"
@@ -41,7 +42,6 @@ import (
 	xjwt "github.com/stanford-rc/minio/internal/jwt"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/mcontext"
-	"github.com/minio/pkg/v3/policy"
 )
 
 // Verify if request has JWT.

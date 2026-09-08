@@ -33,12 +33,12 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	xnet "github.com/minio/pkg/v3/net"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	types "github.com/stanford-rc/minio/internal/logger/target/loggertypes"
 	"github.com/stanford-rc/minio/internal/once"
 	"github.com/stanford-rc/minio/internal/store"
-	xnet "github.com/minio/pkg/v3/net"
 	"github.com/valyala/bytebufferpool"
 )
 

@@ -28,6 +28,7 @@ import (
 	"github.com/stanford-rc/minio/internal/config/browser"
 
 	"github.com/minio/madmin-go/v3"
+	"github.com/minio/pkg/v3/env"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/config/api"
 	"github.com/stanford-rc/minio/internal/config/batch"
@@ -52,7 +53,6 @@ import (
 	"github.com/stanford-rc/minio/internal/crypto"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/env"
 )
 
 func initHelp() {

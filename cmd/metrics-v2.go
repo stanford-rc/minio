@@ -32,16 +32,16 @@ import (
 
 	"github.com/minio/kms-go/kes"
 	"github.com/minio/madmin-go/v3"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/procfs"
 	"github.com/stanford-rc/minio/internal/bucket/lifecycle"
 	"github.com/stanford-rc/minio/internal/cachevalue"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/mcontext"
 	"github.com/stanford-rc/minio/internal/rest"
-	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/procfs"
 )
 
 //go:generate msgp -file=$GOFILE -unexported -io=false

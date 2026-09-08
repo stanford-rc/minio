@@ -27,8 +27,8 @@ import (
 	"testing"
 
 	"github.com/minio/madmin-go/v3"
-	"github.com/stanford-rc/minio/internal/kms"
 	"github.com/minio/pkg/v3/policy"
+	"github.com/stanford-rc/minio/internal/kms"
 )
 
 const (

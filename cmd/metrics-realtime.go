@@ -25,10 +25,10 @@ import (
 	"time"
 
 	"github.com/minio/madmin-go/v3"
-	"github.com/stanford-rc/minio/internal/disk"
-	"github.com/stanford-rc/minio/internal/net"
 	c "github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/load"
+	"github.com/stanford-rc/minio/internal/disk"
+	"github.com/stanford-rc/minio/internal/net"
 )
 
 type collectMetricsOpts struct {

@@ -34,6 +34,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7/pkg/tags"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/amztime"
 	sse "github.com/stanford-rc/minio/internal/bucket/encryption"
 	"github.com/stanford-rc/minio/internal/bucket/lifecycle"
@@ -41,7 +42,6 @@ import (
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/s3select"
-	xnet "github.com/minio/pkg/v3/net"
 	"github.com/zeebo/xxh3"
 )
 

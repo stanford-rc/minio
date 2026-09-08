@@ -33,14 +33,14 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7/pkg/set"
-	"github.com/stanford-rc/minio/internal/auth"
-	"github.com/stanford-rc/minio/internal/config"
-	"github.com/stanford-rc/minio/internal/config/identity/openid"
-	"github.com/stanford-rc/minio/internal/jwt"
 	"github.com/minio/pkg/v3/env"
 	"github.com/minio/pkg/v3/policy"
 	"github.com/minio/pkg/v3/sync/errgroup"
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/stanford-rc/minio/internal/auth"
+	"github.com/stanford-rc/minio/internal/config"
+	"github.com/stanford-rc/minio/internal/config/identity/openid"
+	"github.com/stanford-rc/minio/internal/jwt"
 	"golang.org/x/sync/singleflight"
 )
 

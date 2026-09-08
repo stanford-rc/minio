@@ -31,12 +31,12 @@ import (
 	"time"
 
 	"github.com/minio/madmin-go/v3"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/bucket/bandwidth"
 	"github.com/stanford-rc/minio/internal/grid"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/rest"
-	xnet "github.com/minio/pkg/v3/net"
 )
 
 // client to talk to peer Nodes.

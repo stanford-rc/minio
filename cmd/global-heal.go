@@ -28,6 +28,9 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/minio/madmin-go/v3"
+	"github.com/minio/pkg/v3/console"
+	"github.com/minio/pkg/v3/wildcard"
+	"github.com/minio/pkg/v3/workers"
 	"github.com/stanford-rc/minio/internal/bucket/lifecycle"
 	objectlock "github.com/stanford-rc/minio/internal/bucket/object/lock"
 	"github.com/stanford-rc/minio/internal/bucket/replication"
@@ -35,9 +38,6 @@ import (
 	"github.com/stanford-rc/minio/internal/color"
 	"github.com/stanford-rc/minio/internal/config/storageclass"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/console"
-	"github.com/minio/pkg/v3/wildcard"
-	"github.com/minio/pkg/v3/workers"
 )
 
 const (

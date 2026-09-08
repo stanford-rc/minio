@@ -32,14 +32,14 @@ import (
 	"time"
 
 	"github.com/minio/madmin-go/v3"
+	"github.com/minio/mux"
+	"github.com/minio/pkg/v3/policy"
+	"github.com/minio/pkg/v3/wildcard"
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/config/identity/openid"
 	"github.com/stanford-rc/minio/internal/hash/sha256"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/mux"
-	"github.com/minio/pkg/v3/policy"
-	"github.com/minio/pkg/v3/wildcard"
 )
 
 const (

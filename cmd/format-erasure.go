@@ -27,12 +27,12 @@ import (
 	"sync"
 
 	"github.com/dustin/go-humanize"
+	"github.com/minio/pkg/v3/sync/errgroup"
 	"github.com/stanford-rc/minio/internal/color"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/config/storageclass"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/sync/errgroup"
 )
 
 const (

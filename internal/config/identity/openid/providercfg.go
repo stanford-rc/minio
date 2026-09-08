@@ -24,11 +24,11 @@ import (
 	"fmt"
 	"net/http"
 
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/arn"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/config/identity/openid/provider"
 	xhttp "github.com/stanford-rc/minio/internal/http"
-	xnet "github.com/minio/pkg/v3/net"
 )
 
 type providerCfg struct {

@@ -40,13 +40,13 @@ import (
 
 	jwtreq "github.com/golang-jwt/jwt/v4/request"
 	"github.com/minio/madmin-go/v3"
+	"github.com/minio/mux"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/config"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	xjwt "github.com/stanford-rc/minio/internal/jwt"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/mux"
-	xnet "github.com/minio/pkg/v3/net"
 )
 
 var errDiskStale = errors.New("drive stale")

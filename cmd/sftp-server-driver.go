@@ -33,9 +33,9 @@ import (
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/minio/pkg/v3/mimedb"
 	"github.com/pkg/sftp"
+	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"golang.org/x/crypto/ssh"
 )
 

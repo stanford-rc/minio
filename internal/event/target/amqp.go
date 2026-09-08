@@ -28,12 +28,12 @@ import (
 	"path/filepath"
 	"sync"
 
+	xnet "github.com/minio/pkg/v3/net"
+	"github.com/rabbitmq/amqp091-go"
 	"github.com/stanford-rc/minio/internal/event"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/once"
 	"github.com/stanford-rc/minio/internal/store"
-	xnet "github.com/minio/pkg/v3/net"
-	"github.com/rabbitmq/amqp091-go"
 )
 
 // AMQPArgs - AMQP target arguments.

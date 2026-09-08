@@ -26,9 +26,9 @@ import (
 	"time"
 
 	"github.com/minio/madmin-go/v3"
+	"github.com/minio/pkg/v3/ldap"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/crypto"
-	"github.com/minio/pkg/v3/ldap"
 )
 
 const (

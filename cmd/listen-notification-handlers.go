@@ -24,13 +24,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/minio/mux"
+	"github.com/minio/pkg/v3/policy"
 	"github.com/stanford-rc/minio/internal/event"
 	"github.com/stanford-rc/minio/internal/grid"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/pubsub"
-	"github.com/minio/mux"
-	"github.com/minio/pkg/v3/policy"
 )
 
 func (api objectAPIHandlers) ListenNotificationHandler(w http.ResponseWriter, r *http.Request) {

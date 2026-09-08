@@ -38,8 +38,8 @@ import (
 	jwtgo "github.com/golang-jwt/jwt/v4"
 	"github.com/minio/minio-go/v7/pkg/set"
 	"github.com/minio/minio-go/v7/pkg/signer"
-	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/minio/pkg/v3/policy"
+	xhttp "github.com/stanford-rc/minio/internal/http"
 )
 
 // API suite container common to both ErasureSD and Erasure.

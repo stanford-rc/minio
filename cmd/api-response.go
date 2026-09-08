@@ -29,14 +29,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/minio/pkg/v3/policy"
+	xxml "github.com/minio/xxml"
 	"github.com/stanford-rc/minio/internal/amztime"
 	"github.com/stanford-rc/minio/internal/crypto"
 	"github.com/stanford-rc/minio/internal/handlers"
 	"github.com/stanford-rc/minio/internal/hash"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/policy"
-	xxml "github.com/minio/xxml"
 )
 
 const (

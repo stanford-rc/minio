@@ -39,8 +39,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/s3utils"
 	"github.com/minio/minio-go/v7/pkg/set"
 	"github.com/minio/minio-go/v7/pkg/signer"
-	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/minio/pkg/v3/env"
+	"github.com/stanford-rc/minio/internal/auth"
 )
 
 const (

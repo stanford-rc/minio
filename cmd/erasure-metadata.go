@@ -25,13 +25,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/minio/pkg/v3/sync/errgroup"
 	"github.com/stanford-rc/minio/internal/amztime"
 	"github.com/stanford-rc/minio/internal/bucket/lifecycle"
 	"github.com/stanford-rc/minio/internal/bucket/replication"
 	"github.com/stanford-rc/minio/internal/crypto"
 	"github.com/stanford-rc/minio/internal/hash/sha256"
 	xhttp "github.com/stanford-rc/minio/internal/http"
-	"github.com/minio/pkg/v3/sync/errgroup"
 )
 
 // Object was stored with additional erasure codes due to degraded system at upload time

@@ -36,6 +36,7 @@ import (
 	"strings"
 
 	"github.com/minio/kms-go/kes"
+	"github.com/minio/sio"
 	"github.com/stanford-rc/minio/internal/crypto"
 	"github.com/stanford-rc/minio/internal/etag"
 	"github.com/stanford-rc/minio/internal/hash"
@@ -43,7 +44,6 @@ import (
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/kms"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/sio"
 )
 
 var (

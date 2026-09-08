@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/minio/madmin-go/v3"
+	"github.com/minio/pkg/v3/console"
 	"github.com/stanford-rc/minio/internal/bucket/lifecycle"
 	"github.com/stanford-rc/minio/internal/bucket/object/lock"
 	"github.com/stanford-rc/minio/internal/bucket/replication"
@@ -42,7 +43,6 @@ import (
 	"github.com/stanford-rc/minio/internal/config/heal"
 	"github.com/stanford-rc/minio/internal/event"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
-	"github.com/minio/pkg/v3/console"
 	uatomic "go.uber.org/atomic"
 )
 

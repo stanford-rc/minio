@@ -23,9 +23,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/minio/simdjson-go"
 	"github.com/stanford-rc/minio/internal/s3select/json"
 	"github.com/stanford-rc/minio/internal/s3select/sql"
-	"github.com/minio/simdjson-go"
 )
 
 // Reader - JSON record reader for S3Select.

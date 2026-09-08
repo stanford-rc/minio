@@ -30,12 +30,12 @@ import (
 	"time"
 
 	"github.com/minio/cli"
-	"github.com/stanford-rc/minio/internal/color"
-	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/minio/pkg/v3/console"
 	"github.com/minio/pkg/v3/env"
 	"github.com/minio/pkg/v3/trie"
 	"github.com/minio/pkg/v3/words"
+	"github.com/stanford-rc/minio/internal/color"
+	"github.com/stanford-rc/minio/internal/logger"
 )
 
 // GlobalFlags - global flags for minio.

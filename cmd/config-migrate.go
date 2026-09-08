@@ -24,6 +24,8 @@ import (
 	"path"
 	"strings"
 
+	xnet "github.com/minio/pkg/v3/net"
+	"github.com/minio/pkg/v3/quick"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/config/compress"
 	xldap "github.com/stanford-rc/minio/internal/config/identity/ldap"
@@ -33,8 +35,6 @@ import (
 	"github.com/stanford-rc/minio/internal/config/storageclass"
 	"github.com/stanford-rc/minio/internal/event/target"
 	"github.com/stanford-rc/minio/internal/logger"
-	xnet "github.com/minio/pkg/v3/net"
-	"github.com/minio/pkg/v3/quick"
 )
 
 // Save config file to corresponding backend

@@ -36,13 +36,13 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/minio/madmin-go/v3"
-	"github.com/stanford-rc/minio/internal/auth"
-	"github.com/stanford-rc/minio/internal/config/dns"
-	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/minio/mux"
 	xldap "github.com/minio/pkg/v3/ldap"
 	"github.com/minio/pkg/v3/policy"
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/stanford-rc/minio/internal/auth"
+	"github.com/stanford-rc/minio/internal/config/dns"
+	"github.com/stanford-rc/minio/internal/logger"
 )
 
 // RemoveUser - DELETE /minio/admin/v3/remove-user?accessKey=<access_key>

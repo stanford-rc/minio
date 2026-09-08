@@ -34,6 +34,9 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/encrypt"
 	"github.com/minio/minio-go/v7/pkg/tags"
+	"github.com/minio/mux"
+	"github.com/minio/pkg/v3/policy"
+	"github.com/minio/sio"
 	"github.com/stanford-rc/minio/internal/amztime"
 	sse "github.com/stanford-rc/minio/internal/bucket/encryption"
 	objectlock "github.com/stanford-rc/minio/internal/bucket/object/lock"
@@ -48,9 +51,6 @@ import (
 	"github.com/stanford-rc/minio/internal/hash/sha256"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/mux"
-	"github.com/minio/pkg/v3/policy"
-	"github.com/minio/sio"
 )
 
 // Multipart objectAPIHandlers

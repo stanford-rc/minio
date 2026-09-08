@@ -23,10 +23,10 @@ import (
 	"net/http"
 	"reflect"
 
-	"github.com/stanford-rc/minio/internal/event"
-	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/minio/mux"
 	"github.com/minio/pkg/v3/policy"
+	"github.com/stanford-rc/minio/internal/event"
+	"github.com/stanford-rc/minio/internal/logger"
 )
 
 const (

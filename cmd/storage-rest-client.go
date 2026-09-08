@@ -33,14 +33,14 @@ import (
 	"time"
 
 	"github.com/minio/madmin-go/v3"
+	xnet "github.com/minio/pkg/v3/net"
+	xbufio "github.com/philhofer/fwd"
 	"github.com/stanford-rc/minio/internal/bpool"
 	"github.com/stanford-rc/minio/internal/cachevalue"
 	"github.com/stanford-rc/minio/internal/grid"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/rest"
-	xnet "github.com/minio/pkg/v3/net"
-	xbufio "github.com/philhofer/fwd"
 	"github.com/tinylib/msgp/msgp"
 )
 

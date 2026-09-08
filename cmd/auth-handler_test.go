@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/minio/pkg/v3/policy"
+	"github.com/stanford-rc/minio/internal/auth"
 )
 
 type nullReader struct{}

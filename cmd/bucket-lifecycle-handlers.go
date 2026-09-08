@@ -23,11 +23,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/minio/mux"
+	"github.com/minio/pkg/v3/policy"
 	"github.com/stanford-rc/minio/internal/bucket/lifecycle"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/mux"
-	"github.com/minio/pkg/v3/policy"
 )
 
 const (

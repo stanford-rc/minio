@@ -23,10 +23,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stanford-rc/minio/internal/config"
-	"github.com/stanford-rc/minio/internal/crypto"
 	"github.com/minio/pkg/v3/env"
 	xnet "github.com/minio/pkg/v3/net"
+	"github.com/stanford-rc/minio/internal/config"
+	"github.com/stanford-rc/minio/internal/crypto"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/namespace"
 	"go.uber.org/zap"

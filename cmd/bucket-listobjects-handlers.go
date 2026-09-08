@@ -23,8 +23,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/minio/mux"
+	"github.com/stanford-rc/minio/internal/logger"
 
 	"github.com/minio/pkg/v3/policy"
 )

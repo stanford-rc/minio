@@ -23,12 +23,12 @@ import (
 	"math"
 	"net/http"
 
+	"github.com/minio/pkg/v3/policy"
 	"github.com/stanford-rc/minio/internal/auth"
 	objectlock "github.com/stanford-rc/minio/internal/bucket/object/lock"
 	"github.com/stanford-rc/minio/internal/bucket/replication"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/policy"
 )
 
 // BucketObjectLockSys - map of bucket and retention configuration.

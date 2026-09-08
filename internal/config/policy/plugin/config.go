@@ -24,10 +24,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/stanford-rc/minio/internal/config"
-	xhttp "github.com/stanford-rc/minio/internal/http"
 	xnet "github.com/minio/pkg/v3/net"
 	"github.com/minio/pkg/v3/policy"
+	"github.com/stanford-rc/minio/internal/config"
+	xhttp "github.com/stanford-rc/minio/internal/http"
 )
 
 // Authorization Plugin config and env variables
