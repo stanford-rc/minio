@@ -1734,7 +1734,9 @@ func testAPICopyObjectPartHandlerSanity(obj ObjectLayer, instanceType, bucketNam
 	}
 	uploadID := multipartResponse.UploadID
 
-	a := 0
+	// int64 because globalMinPartSize is a typed var on this fork, not an
+	// untyped constant.
+	a := int64(0)
 	b := globalMinPartSize
 	var parts []CompletePart
 	for partNumber := 1; partNumber <= 2; partNumber++ {
@@ -1756,7 +1758,7 @@ func testAPICopyObjectPartHandlerSanity(obj ObjectLayer, instanceType, bucketNam
 		// Since `apiRouter` satisfies `http.Handler` it has a ServeHTTP to execute the logic of the handler.
 		// Call the ServeHTTP to execute the handler, `func (api objectAPIHandlers) CopyObjectHandler` handles the request.
 		a = globalMinPartSize + 1
-		b = len(bytesData[0].byteData) - 1
+		b = int64(len(bytesData[0].byteData) - 1)
 		apiRouter.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("Test failed to create HTTP request for copy %d", rec.Code)

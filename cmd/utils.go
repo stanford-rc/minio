@@ -49,6 +49,10 @@ import (
 	xaudit "github.com/minio/madmin-go/v3/logger/audit"
 	"github.com/minio/minio-go/v7"
 	miniogopolicy "github.com/minio/minio-go/v7/pkg/policy"
+	"github.com/minio/mux"
+	"github.com/minio/pkg/v3/certs"
+	"github.com/minio/pkg/v3/env"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/config/api"
 	xtls "github.com/stanford-rc/minio/internal/config/identity/tls"
@@ -61,10 +65,6 @@ import (
 	"github.com/stanford-rc/minio/internal/logger"
 	"github.com/stanford-rc/minio/internal/logger/message/audit"
 	"github.com/stanford-rc/minio/internal/rest"
-	"github.com/minio/mux"
-	"github.com/minio/pkg/v3/certs"
-	"github.com/minio/pkg/v3/env"
-	xnet "github.com/minio/pkg/v3/net"
 	"golang.org/x/oauth2"
 )
 
@@ -288,13 +288,84 @@ const (
 	// using 'curl' and presigned URL.
 	globalMaxObjectSize = 5 * humanize.TiByte
 
-	// Minimum Part size for multipart upload is 5MiB
-	globalMinPartSize = 5 * humanize.MiByte
+	// s3MinPartSize is the S3 minimum part size, and upstream MinIO's value for
+	// globalMinPartSize. Named rather than inlined because upstream tests assert
+	// S3 multipart validation against small fixtures and have to lower the server
+	// floor to it; see withS3MinPartSize.
+	s3MinPartSize = 5 * humanize.MiByte
 
 	// Maximum Part ID for multipart upload is 10000
 	// (Acceptable values range from 1 to 10000 inclusive)
 	globalMaxPartID = 10000
 )
+
+// Elm divergence: the minimum multipart part size is 5 GiB, against the S3
+// minimum of 5 MiB that upstream uses.
+//
+// Elm's disk tier is archived to tape, where every part is a separate file
+// consuming an inode and its own metadata, so an object assembled from thousands
+// of small parts is expensive to archive and expensive to recall. Object and
+// version counts are already quota'd; part size was the remaining unbounded
+// dimension.
+//
+// This lived in elm-minio's elm-patch as a build-time AST rewrite until
+// 2026-09-08 and now lives here.
+const (
+	// elmDefaultMinPartSize is the production floor, used when
+	// EnvMinPartSize is unset.
+	elmDefaultMinPartSize = 5 * humanize.GiByte
+
+	// EnvMinPartSize overrides the floor. It exists for acceptance testing: the
+	// muse fault-injection lab drives multipart uploads through real quorum
+	// failures, and a 5 GiB floor makes every scenario a multi-GiB write, which
+	// is too slow to iterate on and forces the lab to a different harness than
+	// the one its scenarios are written against.
+	//
+	// It cannot go below the S3 minimum, so it cannot be used to defeat the tape
+	// protection outright, and an invalid value refuses to start rather than
+	// falling back to a default. serverHandleEnvVars logs the override.
+	EnvMinPartSize = "MINIO_MIN_PART_SIZE"
+)
+
+// globalMinPartSize is the minimum size of every multipart part except the last.
+// Resolved from EnvMinPartSize at startup by serverHandleEnvVars.
+//
+// A var rather than a const so that the override can apply and so tests can
+// lower it. Nothing takes its address, no constant expression depends on it, and
+// isMinAllowedPartSize reads it at call time.
+var globalMinPartSize int64 = elmDefaultMinPartSize
+
+// parseMinPartSize resolves EnvMinPartSize. An empty value means the production
+// default. Accepts anything humanize understands, so "5GiB", "6MiB" and a plain
+// byte count all work.
+//
+// Pure, and separate from the assignment, so the rules are testable without
+// standing up a server.
+func parseMinPartSize(raw string) (int64, error) {
+	if strings.TrimSpace(raw) == "" {
+		return elmDefaultMinPartSize, nil
+	}
+
+	n, err := humanize.ParseBytes(strings.TrimSpace(raw))
+	if err != nil {
+		return 0, fmt.Errorf("%s=%q is not a size: %w", EnvMinPartSize, raw, err)
+	}
+
+	// Below the S3 minimum is refused rather than clamped. Clamping would accept
+	// a value and then not honour it, which is the class of silent divergence
+	// this whole declaration exists to end.
+	if int64(n) < int64(s3MinPartSize) {
+		return 0, fmt.Errorf("%s=%q is %d bytes, below the S3 minimum of %d",
+			EnvMinPartSize, raw, n, int64(s3MinPartSize))
+	}
+
+	if int64(n) >= int64(globalMaxObjectSize) {
+		return 0, fmt.Errorf("%s=%q is %d bytes, at or above the maximum object size of %d",
+			EnvMinPartSize, raw, n, int64(globalMaxObjectSize))
+	}
+
+	return int64(n), nil
+}
 
 // isMaxObjectSize - verify if max object size
 func isMaxObjectSize(size int64) bool {

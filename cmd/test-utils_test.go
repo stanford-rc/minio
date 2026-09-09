@@ -100,6 +100,29 @@ func TestMain(m *testing.M) {
 	// Set as non-distributed.
 	globalIsDistErasure = false
 
+	// ELM DIVERGENCE, TEST DEFAULT. Lower the multipart floor to the S3 minimum
+	// for the whole package.
+	//
+	// Elm compiles globalMinPartSize to 5 GiB (see cmd/utils.go), which no unit
+	// test can satisfy with real data. serverHandleEnvVars() is what resolves the
+	// value in a real server and TestMain never calls it, so without this line the
+	// var sits at the production default for every test in the package and every
+	// upstream test that completes a small multipart upload fails with
+	// PartTooSmall. Measured 2026-09-09: at least five did, across
+	// erasure-healing_test.go and object-handlers_test.go, and they pass on a tree
+	// without the divergence.
+	//
+	// Lowering it HERE rather than per-test is deliberate. Patching each affected
+	// test is whack-a-mole against an unknown denominator: the breakage is
+	// structural, so any upstream test doing a small multipart upload is affected
+	// whether or not anyone has run it yet.
+	//
+	// The divergence is still pinned, just not through this var. See
+	// TestMinPartSizeIsElmFiveGiB, which asserts elmDefaultMinPartSize and
+	// parseMinPartSize(""), and TestMinAllowedPartSizeUsesTheElmFloor, which
+	// raises the floor for its own duration via withElmMinPartSize.
+	globalMinPartSize = s3MinPartSize
+
 	// Disable printing console messages during tests.
 	color.Output = io.Discard
 	// Disable Error logging in testing.

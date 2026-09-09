@@ -51,15 +51,15 @@ import (
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/set"
+	"github.com/minio/pkg/v3/certs"
+	"github.com/minio/pkg/v3/console"
+	"github.com/minio/pkg/v3/env"
+	xnet "github.com/minio/pkg/v3/net"
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/color"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/kms"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/certs"
-	"github.com/minio/pkg/v3/console"
-	"github.com/minio/pkg/v3/env"
-	xnet "github.com/minio/pkg/v3/net"
 	"golang.org/x/term"
 )
 
@@ -830,6 +830,19 @@ func serverHandleEnvVars() {
 	}
 
 	globalEnableSyncBoot = env.Get("MINIO_SYNC_BOOT", config.EnableOff) == config.EnableOn
+
+	// resolve the multipart minimum part size. Fatal on a bad value.
+	if minPartSize, err := parseMinPartSize(env.Get(EnvMinPartSize, "")); err != nil {
+		logger.Fatal(err, "Invalid "+EnvMinPartSize+" value in environment variable")
+	} else {
+		globalMinPartSize = minPartSize
+		if globalMinPartSize != elmDefaultMinPartSize {
+			logger.Info("Minimum multipart part size OVERRIDDEN to %s via %s (Elm default is %s). "+
+				"This lowers a durability-relevant floor and is intended for testing.",
+				humanize.IBytes(uint64(globalMinPartSize)), EnvMinPartSize,
+				humanize.IBytes(uint64(elmDefaultMinPartSize)))
+		}
+	}
 }
 
 func loadRootCredentials() auth.Credentials {
