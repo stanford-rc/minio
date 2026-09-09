@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/bits"
 	"os"
 	"path"
 	"sort"
@@ -33,15 +34,16 @@ import (
 
 	"github.com/klauspost/readahead"
 	"github.com/minio/minio-go/v7/pkg/set"
+	"github.com/minio/pkg/v3/env"
+	"github.com/minio/pkg/v3/mimedb"
+	"github.com/minio/pkg/v3/sync/errgroup"
+	"github.com/minio/sio"
 	"github.com/stanford-rc/minio/internal/config/storageclass"
 	"github.com/stanford-rc/minio/internal/crypto"
 	"github.com/stanford-rc/minio/internal/hash"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/mimedb"
-	"github.com/minio/pkg/v3/sync/errgroup"
-	"github.com/minio/sio"
 )
 
 func (er erasureObjects) getUploadIDDir(bucket, object, uploadID string) string {
@@ -567,6 +569,132 @@ func (er erasureObjects) renamePart(ctx context.Context, disks []StorageAPI, src
 	return evalDisks(disks, errs), err
 }
 
+// Write-set enforcement for multipart parts. Used by PutObjectPart at both of its
+// narrowing points, and by CompleteMultipartUpload at the commit boundary.
+//
+// ONE POLICY, NOT A MENU. A part that did not land on every drive it was attempted
+// on is ACCEPTED when it is still healable, and the repair is queued at the commit
+// boundary. It is REFUSED only when the shortfall leaves it unhealable, because a
+// 200 would then be a promise the cluster cannot keep.
+//
+// MINIO_MULTIPART_WRITESET=off restores the upstream code path. That is a rollback
+// lever rather than a policy choice, for getting a running cluster back to known
+// behaviour without a rebuild. The unrecoverable case is refused even when off,
+// which is what upstream's own write quorum is supposed to do anyway.
+func multipartWriteSetEnabled() bool {
+	return !strings.EqualFold(env.Get("MINIO_MULTIPART_WRITESET", "on"), "off")
+}
+
+// WHY A HEALABLE PART IS ACCEPTED RATHER THAN REFUSED.
+//
+// Refusing is only useful if the client's re-send is likely to succeed, and that
+// depends on whether these failures are independent. They are not. Measured on
+// production, 2026-07-31, a rebuild day: 416 shard-write failures against 6,821
+// parts, so 6.1% of parts would have been refused. Median inter-arrival 2.0 s, and
+// 49% of failures had another failure to the SAME drive within 300 s, about how
+// long one 5 GiB part takes. They arrive in bursts.
+//
+// So a re-sent part often meets the same condition that refused it, and with a
+// client retry budget of two or three the upload fails outright. Refusing would
+// convert silent degradation into failed multi-terabyte uploads during exactly the
+// windows when the cluster is already struggling, and rebuilds last 60 to 67 hours.
+// The client mix makes it worse: Globus is 90.48% of PutObjectPart over 90 days,
+// and Globus Support ticket #392783 establishes that a single 503 makes it cancel
+// and DELETE every in-flight upload in the batch, by design, with no retry.
+//
+// An earlier revision tried to have both, refusing while refusals were rare and
+// degrading to accept-and-heal once they clustered, through a sliding-window
+// breaker keyed on a global event ring. REMOVED 2026-09-08. It made the server's
+// answer to identical input depend on unrelated concurrent traffic, which is
+// untestable in production and the wrong thing to reason about mid-incident, and
+// it bought nothing that heal does not now deliver.
+//
+// What makes accept-and-heal sound is that heal genuinely repairs this shape on the
+// tree this patch targets: upstream 16f8cf1c5, "heal: Include more use case of not
+// healable but readable objects", is an ancestor of 34fbb95aa. It is NOT in
+// RELEASE.2024-08-26, where heal cannot repair a readable-but-incomplete object at
+// all, so a queued repair there is a no-op and this patch MUST NOT be back-ported
+// to that binary without also taking 16f8cf1c5.
+
+// enforceWriteSet compares the drives a part was ATTEMPTED on against the drives
+// that still hold it, and applies the configured policy to any shortfall.
+//
+// Called at BOTH narrowing points inside PutObjectPart, because they are separate
+// faults with the same consequence and the same remedy:
+//
+//	stage "encode"  erasure.Encode returns success as soon as writeQuorum drives
+//	                accept, and multiWriter nils the failed writer and swallows its
+//	                error (cmd/erasure-encode.go).
+//	stage "rename"  renamePart ends in reduceWriteQuorumErrs + evalDisks, so with
+//	                writeQuorum renames succeeding it returns nil and nils the
+//	                drive that failed. Worse than the encode case: the errors it
+//	                drops are members of objectOpIgnoredErrs, so they are DISCARDED
+//	                rather than outvoted, and reduceQuorumErrs logs nothing.
+//
+// Proven by TestRenamePartShortfallIsSilent: guarding only the encode site leaves a
+// 1-of-4 rename failure accepted, identically to an unpatched tree.
+//
+// Acting here rather than at commit matters because the client still holds the
+// data. A refused part costs one re-send and restores FULL redundancy; a part
+// accepted and healed later reconstructs to the erasure minimum with no margin.
+// There is no server-side retry available: the shard's only copy was the request
+// body, already consumed, and storageRESTClient.CreateFile cannot retry a stream it
+// has drained.
+//
+// The HEAL half of this work is Fix A in CompleteMultipartUpload, NOT here. Queueing
+// a repair from PutObjectPart is inert: the object does not exist until the commit
+// runs, so healRoutine finds nothing one second later, and on an overwrite it heals
+// the previous version instead. So this function only ever refuses or lets through.
+func (er erasureObjects) enforceWriteSet(ctx context.Context, stage, bucket, object string, partID int,
+	attemptedDisks, survivors []StorageAPI, landed, attempted, dataBlocks int,
+) error {
+	if landed >= attempted {
+		return nil
+	}
+
+	// Split the shortfall by drive health. A drive that failed and still reports
+	// itself online is a transient fault: the client can re-send and get full
+	// redundancy back. A drive already known bad is a degraded cluster, and refusing
+	// writes on its behalf would take the tier down rather than protect it.
+	//
+	// Endpoints are named, not just counted. Without the identity a shortfall event
+	// cannot be correlated with a rebuild window, a drive-timeout series, or the
+	// inter-node offline messages, which is every question we want to ask of it.
+	var lostHealthy, lostUnhealthy []string
+	for i := range attemptedDisks {
+		if attemptedDisks[i] == nil || (i < len(survivors) && survivors[i] != nil) {
+			continue
+		}
+		if attemptedDisks[i].IsOnline() {
+			lostHealthy = append(lostHealthy, attemptedDisks[i].String())
+		} else {
+			lostUnhealthy = append(lostUnhealthy, attemptedDisks[i].String())
+		}
+	}
+
+	// Unrecoverable is refused whether or not enforcement is on: fewer surviving
+	// shards than data blocks cannot be reconstructed from parity, so returning 200
+	// would be a promise the cluster cannot keep. Under EC:1 writeQuorum already
+	// equals DataBlocks so Encode should have failed first; defence in depth.
+	if landed < dataBlocks {
+		storageLogIf(ctx, fmt.Errorf(
+			"multipart write-set shortfall at %s on %s/%s part %d: landed on %d of %d attempted drives (lost healthy %v, lost unhealthy %v, data blocks %d); UNRECOVERABLE, refusing the part because it could not be reconstructed from parity",
+			stage, bucket, object, partID, landed, attempted, lostHealthy, lostUnhealthy, dataBlocks))
+		return toObjectErr(errErasureWriteQuorum, bucket, object)
+	}
+
+	// Healable, so accepted. The commit boundary detects the resulting divergence
+	// and queues the repair there, where the object actually exists. Queueing from
+	// here is inert, for the reason given above.
+	if multipartWriteSetEnabled() {
+		storageLogIf(ctx, fmt.Errorf(
+			"multipart write-set shortfall at %s on %s/%s part %d: landed on %d of %d attempted drives (lost healthy %v, lost unhealthy %v); healable, accepted, commit-boundary detection will queue the heal",
+			stage, bucket, object, partID, landed, attempted, lostHealthy, lostUnhealthy))
+	}
+
+	return nil
+}
+
 // PutObjectPart - reads incoming stream and internally erasure codes
 // them. This call is similar to single put operation but it is part
 // of the multipart transaction.
@@ -649,12 +777,22 @@ func (er erasureObjects) PutObjectPart(ctx context.Context, bucket, object, uplo
 		buffer = buffer[:fi.Erasure.BlockSize]
 	}
 	writers := make([]io.Writer, len(onlineDisks))
+	// Which drives this part was ATTEMPTED on. A drive already offline is not in
+	// this set, so it can never be blamed below: only a drive that accepted the
+	// attempt and then failed during the write counts.
+	attempted := 0
 	for i, disk := range onlineDisks {
 		if disk == nil {
 			continue
 		}
+		attempted++
 		writers[i] = newBitrotWriter(disk, bucket, minioMetaTmpBucket, tmpPartPath, erasure.ShardFileSize(data.Size()), DefaultBitrotAlgorithm, erasure.ShardSize())
 	}
+	// Keep the handles: after Encode the entries in onlineDisks get nil'd, and the
+	// health of the drive that failed is what separates a transient fault from a
+	// broken drive.
+	attemptedDisks := make([]StorageAPI, len(onlineDisks))
+	copy(attemptedDisks, onlineDisks)
 
 	toEncode := io.Reader(data)
 	if data.Size() > bigFileThreshold {
@@ -687,10 +825,33 @@ func (er erasureObjects) PutObjectPart(ctx context.Context, bucket, object, uplo
 		return pi, IncompleteBody{Bucket: bucket, Object: object}
 	}
 
+	// This loop is where the identity of the failed drive has always been known,
+	// and where it was always discarded. erasure.Encode returns success as soon as
+	// writeQuorum drives accept, and multiWriter nils any writer that failed and
+	// swallows its error (cmd/erasure-encode.go). So a part can be admitted on 3 of
+	// 4 drives, return 200, and leave a shard that never existed. Nothing
+	// downstream compares the set: CompleteMultipartUpload's only self-repair hook
+	// asks whether a drive is OFFLINE, and a drive that merely missed one write is
+	// still online.
+	//
+	// Acting here rather than at commit matters because the client is still holding
+	// the data. A refused part costs one re-send and restores FULL redundancy; a
+	// part accepted and healed later reconstructs to the erasure minimum with no
+	// margin. There is no server-side retry available: the shard's only copy was the
+	// request body, already consumed, and storageRESTClient.CreateFile cannot retry
+	// a stream it has drained.
+	landed := 0
 	for i := range writers {
 		if writers[i] == nil {
 			onlineDisks[i] = nil
+			continue
 		}
+		landed++
+	}
+
+	if err := er.enforceWriteSet(ctx, "encode", bucket, object, partID,
+		attemptedDisks, onlineDisks, landed, attempted, fi.Erasure.DataBlocks); err != nil {
+		return pi, err
 	}
 
 	// Rename temporary part file to its final location.
@@ -759,6 +920,18 @@ func (er erasureObjects) PutObjectPart(ctx context.Context, bucket, object, uplo
 	ctx = rlkctx.Context()
 	defer uploadIDRLock.RUnlock(rlkctx)
 
+	// The drives that still held the shard going into the rename. renamePart nils
+	// the ones whose rename failed, so this is the only surviving record of what was
+	// attempted at this stage.
+	renameAttempted := make([]StorageAPI, len(onlineDisks))
+	copy(renameAttempted, onlineDisks)
+	renameAttemptedCount := 0
+	for i := range renameAttempted {
+		if renameAttempted[i] != nil {
+			renameAttemptedCount++
+		}
+	}
+
 	onlineDisks, err = er.renamePart(ctx, onlineDisks, minioMetaTmpBucket, tmpPartPath, minioMetaMultipartBucket, partPath, partFI, writeQuorum, uploadIDPath)
 	if err != nil {
 		if errors.Is(err, errUploadIDNotFound) {
@@ -774,6 +947,20 @@ func (er erasureObjects) PutObjectPart(ctx context.Context, bucket, object, uplo
 		}
 
 		return pi, toObjectErr(err, minioMetaMultipartBucket, partPath)
+	}
+
+	// The second narrowing, and the one A-prime originally missed. renamePart
+	// returned nil because writeQuorum renames succeeded, while evalDisks quietly
+	// nil'd any drive whose rename did not.
+	renameLanded := 0
+	for i := range onlineDisks {
+		if onlineDisks[i] != nil {
+			renameLanded++
+		}
+	}
+	if err := er.enforceWriteSet(ctx, "rename", bucket, object, partID,
+		renameAttempted, onlineDisks, renameLanded, renameAttemptedCount, fi.Erasure.DataBlocks); err != nil {
+		return pi, err
 	}
 
 	// Return success.
@@ -957,8 +1144,10 @@ func (er erasureObjects) ListObjectParts(ctx context.Context, bucket, object, up
 		partMetaPaths[i] = pathJoin(partPath, fmt.Sprintf("part.%d.meta", part))
 	}
 
-	// Read parts in quorum
-	objParts, err := readParts(ctx, onlineDisks, minioMetaMultipartBucket, partMetaPaths,
+	// Read parts in quorum. The divergence report is discarded here: this is a
+	// read-only listing and queueing a heal from it would let any client trigger
+	// repair work. CompleteMultipartUpload is where it is acted on.
+	objParts, _, _, err := readParts(ctx, onlineDisks, minioMetaMultipartBucket, partMetaPaths,
 		partNums, readQuorum)
 	if err != nil {
 		return result, toObjectErr(err, bucket, object, uploadID)
@@ -993,7 +1182,151 @@ func (er erasureObjects) ListObjectParts(ctx context.Context, bucket, object, up
 	return result, nil
 }
 
-func readParts(ctx context.Context, disks []StorageAPI, bucket string, partMetaPaths []string, partNumbers []int, readQuorum int) ([]ObjectPartInfo, error) {
+// partPlacement is what readParts learned about which drives hold which parts.
+//
+// KEYED BY THE DRIVE'S WITHIN-SET INDEX from StorageAPI.GetDiskLoc(), never by
+// position in the disks slice. CompleteMultipartUpload calls
+// shuffleDisksAndPartsMetadataByIndex between readParts and renameData, so a
+// position-keyed mask would silently misalign against the post-rename drive set and
+// the commit check below would compare the wrong drives. GetDiskLoc returns
+// endpoint.DiskIdx, assigned once per erasure set at startup
+// (cmd/endpoint.go:1005), so it is stable for the life of the process.
+type partPlacement struct {
+	held   []uint64 // per part: bitmask of drive indices holding a usable part.N.meta
+	usable uint64   // drives usable at readParts time
+	valid  bool     // false if the set is wider than a uint64, in which case skip
+}
+
+// unreadableAfter reports the parts that fall below dataBlocks once the drive set is
+// narrowed to `committed`. That is the difference between a part that merely lost
+// redundancy and one that can no longer be reconstructed at all.
+func (p partPlacement) unreadableAfter(committed uint64, dataBlocks int) []int {
+	if !p.valid {
+		return nil
+	}
+	var out []int
+	for pidx, m := range p.held {
+		if m == 0 {
+			continue // no drive served it; already reported through partInfosInQuorum
+		}
+		if bits.OnesCount64(m&committed) < dataBlocks {
+			out = append(out, pidx)
+		}
+	}
+	return out
+}
+
+// healableDivergence compares OUR healable verdict against MINIO'S OWN and reports
+// the parts where the two disagree.
+//
+// WHY BOTH ARE COMPUTED. MinIO decides a part is fine by counting ETag votes across
+// every drive it read, in readParts: `partMetaQuorumMap[maxETag] >= readQuorum`,
+// which leaves `partInfosInQuorum[pidx].Error` empty. That count is not scoped to
+// the drives that actually committed the object, and in RELEASE.2024-08-26 the vote
+// map is built outside the per-drive loop, so a part present on ONE of four drives
+// can satisfy it. Acting on that verdict is how a 200 gets returned for something
+// that cannot be read back.
+//
+// Ours is the placement bitmask intersected with the committed set, which is the
+// question that actually matters: of the drives that hold this part, how many are in
+// the set the object was finalized against. That is what unreadableAfter answers and
+// it is what this patch acts on.
+//
+// The two should agree. Where they do not, the disagreement is evidence about a real
+// defect in production rather than a hypothetical, so it is logged loudly and left
+// for triage. We do NOT act on MinIO's verdict, in either direction.
+//
+// Returns the part indices where MinIO says the part is fine and we say it is below
+// dataBlocks among committed drives ("optimistic"), and the reverse ("pessimistic").
+func healableDivergence(placement partPlacement, partInfos []ObjectPartInfo,
+	committed uint64, dataBlocks int,
+) (optimistic, pessimistic []int) {
+	if !placement.valid {
+		return nil, nil
+	}
+	for pidx, m := range placement.held {
+		if m == 0 {
+			continue // no drive served it; reported through partInfosInQuorum already
+		}
+		if pidx >= len(partInfos) {
+			continue
+		}
+		theirsOK := partInfos[pidx].Error == ""
+		oursOK := bits.OnesCount64(m&committed) >= dataBlocks
+		switch {
+		case theirsOK && !oursOK:
+			optimistic = append(optimistic, pidx)
+		case !theirsOK && oursOK:
+			pessimistic = append(pessimistic, pidx)
+		}
+	}
+	return optimistic, pessimistic
+}
+
+// shouldQueueWriteSetHeal reports whether a write-set shortfall should be queued
+// for heal.
+//
+// RECOMMENDATION 3, 2026-08-31.  The below-quorum case is ALREADY unreachable here,
+// and this exists because it is unreachable only emergently.  Two facts combine:
+//
+//   - readParts gates `underReplicated` and `partPlacement.valid` on the same
+//     trackSets flag, so when the drive set is too wide to track, no shortfall is
+//     reported and nothing is queued.
+//   - the commit-set collapse check runs earlier in CompleteMultipartUpload and
+//     RETURNS InvalidPart when any part falls below dataBlocks, so control never
+//     reaches the queue in that state.
+//
+// Neither fact is local to the queueing site, and nothing there says so.  A future
+// edit that reorders those blocks, or adds a return path around the collapse check,
+// would silently reopen the hole with no comment to warn against it.  Stating the
+// condition here makes it enforced locally rather than inferred from two other
+// places.
+//
+// WHY IT MATTERS.  Queueing a heal for a part below read quorum is worse than
+// useless.  Heal cannot repair it: master's healObject sets cannotHeal on exactly
+// that condition.  What it does instead is call deleteIfDangling, which removes the
+// whole object VERSION from every drive, so one part below quorum in a 203-part
+// object destroys all 203 including the ~200 intact ones.  That path is gated on
+// neither opts.Remove nor a scan mode.  An object in that state needs a person, not
+// a heal.
+func shouldQueueWriteSetHeal(placement partPlacement, underReplicated []int,
+	committed uint64, dataBlocks int,
+) (bool, []int) {
+	if len(underReplicated) == 0 {
+		return false, nil
+	}
+	// Below read quorum: not a redundancy problem, a loss. Report the parts so the
+	// caller can name them rather than logging an unexplained refusal.
+	if lost := placement.unreadableAfter(committed, dataBlocks); len(lost) > 0 {
+		return false, lost
+	}
+	return true, nil
+}
+
+// readParts additionally reports which parts are held on a strictly smaller set
+// of drives than the object's usable write set. That divergence is the silent
+// multipart loss: a part admitted at one write-quorum subset while the object is
+// finalized against another, with nothing comparing the two.
+//
+// FIX A. This is the commit-boundary half of the write-set work, and it is the
+// necessary complement to the PutObjectPart check rather than a duplicate of it.
+// The part-boundary check can only see erasure.Encode; it runs BEFORE renamePart
+// and is structurally blind to every narrowing downstream of itself. Proven by
+// TestRenamePartShortfallIsSilent, where a 1-of-4 RenamePart failure is accepted
+// identically with and without that check. This one keys on what actually landed,
+// so it catches renamePart, a failed .meta write, and readParts' own count-based
+// accept, whatever their cause.
+//
+// Everything needed is already read here. objectPartInfos[disk][part] is a full
+// 2-D presence matrix, and the loop below collapses it to a per-part COUNT, which
+// discards drive identity. Each pidx iteration is independent, so no part is ever
+// compared against another. One bitmask per part closes that, with no metadata
+// change and no extra I/O: O(drives x parts) integer ops on data already in memory.
+//
+// A drive down for the whole upload is missing from EVERY part's set, so the sets
+// agree and nothing is reported. Only a drive that took some parts and not others
+// produces a strict subset, which is exactly the fault.
+func readParts(ctx context.Context, disks []StorageAPI, bucket string, partMetaPaths []string, partNumbers []int, readQuorum int) ([]ObjectPartInfo, []int, partPlacement, error) {
 	g := errgroup.WithNErrs(len(disks))
 
 	objectPartInfos := make([][]*ObjectPartInfo, len(disks))
@@ -1009,7 +1342,47 @@ func readParts(ctx context.Context, disks []StorageAPI, bucket string, partMetaP
 	}
 
 	if err := reduceReadQuorumErrs(ctx, g.Wait(), objectOpIgnoredErrs, readQuorum); err != nil {
-		return nil, err
+		return nil, nil, partPlacement{}, err
+	}
+
+	// One bitmask per part: which drives hold a usable part.N.meta. Bounded to 64
+	// drives, far above any erasure set, and the check is SKIPPED rather than
+	// wrong if that is ever exceeded.
+	// diskBit maps a drive to its bit position using its within-set index rather
+	// than its slice position, for the reason given on partPlacement.
+	diskBit := make([]int, len(disks))
+	trackSets := len(disks) <= 64
+	for idx := range disks {
+		diskBit[idx] = -1
+		if disks[idx] == nil {
+			continue
+		}
+		_, _, d := disks[idx].GetDiskLoc()
+		if d < 0 || d >= 64 {
+			trackSets = false // outside bitmask width; skip rather than be wrong
+			continue
+		}
+		diskBit[idx] = d
+	}
+	presence := make([]uint64, len(partMetaPaths))
+
+	// The reference set is the drives USABLE for this read, not the widest set
+	// among the parts. Comparing parts only against each other misses a drive that
+	// dropped EVERY part, which is equally silent and equally fatal to redundancy.
+	// Measured: one drive holding none of an object's parts produced no divergence
+	// between siblings and went unreported.
+	//
+	// A genuinely offline drive is nil here, which is exactly how MinIO represents
+	// it, so it is excluded and cannot raise a false positive. A drive that is
+	// online but could not serve metadata IS included, and flagging it is correct:
+	// heal is the right response to an online drive that cannot answer.
+	var usable uint64
+	if trackSets {
+		for idx := range disks {
+			if diskBit[idx] >= 0 {
+				usable |= 1 << uint(diskBit[idx])
+			}
+		}
 	}
 
 	partInfosInQuorum := make([]ObjectPartInfo, len(partMetaPaths))
@@ -1029,6 +1402,9 @@ func readParts(ctx context.Context, disks []StorageAPI, bucket string, partMetaP
 			if pinfo != nil && pinfo.ETag != "" {
 				pinfos = append(pinfos, pinfo)
 				partMetaQuorumMap[pinfo.ETag]++
+				if trackSets && diskBit[idx] >= 0 {
+					presence[pidx] |= 1 << uint(diskBit[idx])
+				}
 				continue
 			}
 			partMetaQuorumMap[partMetaPaths[pidx]]++
@@ -1071,7 +1447,26 @@ func readParts(ctx context.Context, disks []StorageAPI, bucket string, partMetaP
 			}.Error(),
 		}
 	}
-	return partInfosInQuorum, nil
+
+	// Compare the sets. Any part held on a strict subset of the usable drives was
+	// admitted at fewer drives than the object was finalized against.
+	var underReplicated []int
+	if trackSets {
+		for pidx, m := range presence {
+			// Only parts that are otherwise fine: a part already carrying an error
+			// is reported through partInfosInQuorum and needs no second channel.
+			// m == 0 means no drive served it at all, which is the same case.
+			if m != usable && m != 0 && partInfosInQuorum[pidx].Error == "" {
+				underReplicated = append(underReplicated, pidx)
+			}
+		}
+	}
+
+	return partInfosInQuorum, underReplicated, partPlacement{
+		held:   presence,
+		usable: usable,
+		valid:  trackSets,
+	}, nil
 }
 
 func objPartToPartErr(part ObjectPartInfo) error {
@@ -1147,7 +1542,7 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 		partNumbers[idx] = part.PartNumber
 	}
 
-	partInfoFiles, err := readParts(ctx, onlineDisks, minioMetaMultipartBucket, partMetaPaths, partNumbers, readQuorum)
+	partInfoFiles, underReplicatedParts, placement, err := readParts(ctx, onlineDisks, minioMetaMultipartBucket, partMetaPaths, partNumbers, readQuorum)
 	if err != nil {
 		return oi, err
 	}
@@ -1469,6 +1864,60 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 		return ObjectInfo{}, toObjectErr(err, bucket, object, uploadID)
 	}
 
+	// FAIL THE COMMIT when a part has become unreadable.
+	//
+	// This is the third response, alongside refusing at the part boundary and
+	// accepting for repair. It exists because neither of those covers the shape that
+	// produced Elm's one confirmed permanent loss: a part admitted at exactly
+	// readQuorum, and then renameData committing on writeQuorum drives while
+	// EXCLUDING one of the drives that part depended on. The part drops below
+	// dataBlocks, no reconstruction is possible, and the pre-existing code path
+	// returns 200.
+	//
+	// readParts already recorded which drives hold each part. renameData has just
+	// reported which drives committed, as the non-nil entries of onlineDisks. The
+	// intersection is the set that both holds the part and committed it, and if that
+	// is smaller than dataBlocks the part cannot be read back. Queueing a repair for
+	// it is pointless: there is nothing left to reconstruct from.
+	//
+	// Failing here also preserves the evidence. The staging directory is removed by a
+	// deferred call that is already conditional on `err == nil`, so returning an error
+	// leaves the surviving shards in place instead of deleting them. In the traced
+	// loss those staging copies were the only recoverable copies and were destroyed
+	// 4m39s after the commit.
+	//
+	// Rate matters and is the reason this is safe where a part-boundary refusal is
+	// not. This fires only when data has genuinely been lost, not on every shortfall,
+	// so it does not carry the client amplification cost that makes `reject`
+	// unusable against a client mix dominated by one that cancels whole transfer runs
+	// on any failure.
+	if !opts.Speedtest {
+		var committed uint64
+		for i := range onlineDisks {
+			if onlineDisks[i] == nil {
+				continue
+			}
+			if _, _, d := onlineDisks[i].GetDiskLoc(); d >= 0 && d < 64 {
+				committed |= 1 << uint(d)
+			}
+		}
+		if lost := placement.unreadableAfter(committed, fi.Erasure.DataBlocks); len(lost) > 0 {
+			nums := make([]int, 0, len(lost))
+			for _, pidx := range lost {
+				if pidx < len(partNumbers) {
+					nums = append(nums, partNumbers[pidx])
+				}
+			}
+			storageLogIf(ctx, fmt.Errorf(
+				"multipart commit-set collapse on %s/%s: part(s) %v fell below %d data blocks once the commit set narrowed (held %#x, committed %#x, usable at read %#x); failing the commit so the staging shards are retained and the client is told",
+				bucket, object, nums, fi.Erasure.DataBlocks, placement.held, committed, placement.usable))
+			if len(nums) > 0 {
+				return oi, toObjectErr(InvalidPart{PartNumber: nums[0]}, bucket, object, uploadID)
+			}
+			return oi, toObjectErr(errErasureWriteQuorum, bucket, object, uploadID)
+		}
+	}
+
 	if !opts.Speedtest && len(versions) > 0 {
 		globalMRFState.addPartialOp(PartialOperation{
 			Bucket:    bucket,
@@ -1488,6 +1937,89 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 			}
 			er.addPartial(bucket, object, fi.VersionID)
 			break
+		}
+	}
+
+	// FIX A. The loop above is multipart's only pre-existing self-repair hook, and
+	// it fires on `disk == nil || !disk.IsOnline()`. That covers a renameData
+	// failure, because evalDisks nils the drive that failed. It CANNOT fire for a
+	// part-level shortfall: a drive that merely missed one write mid-upload is
+	// still online and still non-nil here. The part is gone and nothing is queued,
+	// so the object sits at reduced redundancy until something reads it, which on
+	// archive data can be years.
+	//
+	// Placed AFTER renameData and commitRenameDataDir deliberately. This is the
+	// first point at which bucket/object names a real object, so the MRF entry has
+	// a target. Queueing the same repair from PutObjectPart does nothing at all:
+	// the object does not exist until this function runs, healRoutine waits one
+	// second and finds nothing, and on an overwrite it heals the previous version
+	// instead. That is why the reject half belongs at the part boundary and the
+	// heal half belongs here.
+	//
+	// This does NOT fail the commit, deliberately. The object is complete and every
+	// surviving shard is correct, so it reads back byte-for-byte from the remaining
+	// quorum; failing here would make a client re-upload terabytes of good data.
+	// What is missing is redundancy, and redundancy is what heal restores.
+	if !opts.Speedtest && multipartWriteSetEnabled() {
+		// Recompute the commit set rather than reuse the collapse check's local:
+		// the predicate has to be evaluated against the same drives here, and
+		// borrowing a variable from a block 60 lines up is how the invariant
+		// became implicit in the first place.
+		var committed uint64
+		for i := range onlineDisks {
+			if onlineDisks[i] == nil {
+				continue
+			}
+			if _, _, d := onlineDisks[i].GetDiskLoc(); d >= 0 && d < 64 {
+				committed |= 1 << uint(d)
+			}
+		}
+
+		queue, lost := shouldQueueWriteSetHeal(placement, underReplicatedParts,
+			committed, fi.Erasure.DataBlocks)
+
+		partNums := func(idxs []int) []int {
+			out := make([]int, 0, len(idxs))
+			for _, pidx := range idxs {
+				if pidx < len(partNumbers) {
+					out = append(out, partNumbers[pidx])
+				}
+			}
+			return out
+		}
+
+		// Cross-check our verdict against MinIO's own before acting on ours. This
+		// changes no behaviour; it exists to measure how often the count-based
+		// accept disagrees with the committed-set intersection in production.
+		if opt, pess := healableDivergence(placement, partInfoFiles, committed,
+			fi.Erasure.DataBlocks); len(opt) > 0 || len(pess) > 0 {
+			if len(opt) > 0 {
+				storageLogIf(ctx, fmt.Errorf(
+					"multipart healable-verdict DIVERGENCE on %s/%s: part(s) %v pass MinIO's readQuorum ETag count but hold fewer than %d data blocks among committed drives (held %#x, committed %#x); acting on the committed-set verdict. This is the count-based false-accept and it means a plain read of this object may fail",
+					bucket, object, partNums(opt), fi.Erasure.DataBlocks, placement.held, committed))
+			}
+			if len(pess) > 0 {
+				storageLogIf(ctx, fmt.Errorf(
+					"multipart healable-verdict divergence on %s/%s: part(s) %v carry a readParts error yet hold at least %d data blocks among committed drives (held %#x, committed %#x); acting on the committed-set verdict",
+					bucket, object, partNums(pess), fi.Erasure.DataBlocks, placement.held, committed))
+			}
+		}
+
+		switch {
+		case queue:
+			storageLogIf(ctx, fmt.Errorf(
+				"multipart write-set divergence on %s/%s: part(s) %v committed on fewer drives than the object's usable write set; queueing heal",
+				bucket, object, partNums(underReplicatedParts)))
+			er.addPartial(bucket, object, fi.VersionID)
+
+		case len(lost) > 0:
+			// Unreachable today: the commit-set collapse check above returns
+			// InvalidPart before control gets here. Kept and logged because it is
+			// unreachable only by that ordering, and if it ever fires the queue
+			// would have handed MinIO an object it deletes rather than repairs.
+			storageLogIf(ctx, fmt.Errorf(
+				"multipart write-set divergence on %s/%s: part(s) %v are BELOW read quorum (%d data blocks needed); NOT queueing heal, because heal cannot repair a part below quorum and would evaluate the object for deletion instead. This object needs triage, not a heal",
+				bucket, object, partNums(lost), fi.Erasure.DataBlocks))
 		}
 	}
 
