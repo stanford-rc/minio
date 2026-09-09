@@ -121,6 +121,42 @@ func TestMain(m *testing.M) {
 
 	globalIsCICD = true
 
+	// ELM 2026-09-09. orchestrated is IsKubernetes() || IsDocker() evaluated at
+	// package var init (cmd/common-main.go:70), and IsDocker() stats /.dockerenv,
+	// which exists in our dev container. Upstream CI ran on bare VMs where the flag
+	// is already false, so every endpoint test was written and validated against
+	// false. Nothing is being suppressed here.
+	//
+	// With it true, four tests hang forever rather than fail: TestCreateEndpoints,
+	// TestCreateServerEndpoints, TestGetLocalPeer and TestGetRemotePeers. The two
+	// resolution loops, Endpoints.UpdateIsLocal (cmd/endpoint.go:609) and
+	// PoolEndpointList.UpdateIsLocal (cmd/endpoint.go:789), skip any endpoint whose
+	// hostname resolves only to loopback WITHOUT incrementing epsResolved, so
+	// neither loop condition can ever be satisfied by an all-loopback endpoint set.
+	// The only other exit is globalOSSignalCh, which no test binary writes to.
+	// Confirmed by stack dump at endpoint.go:707 and :898, the keepAliveTicker
+	// receives.
+	//
+	// That wait is correct in production, where a Kubernetes peer's DNS name can
+	// transiently resolve to loopback before its real address is published. It is
+	// unreachable in a test, where 127.0.0.1 is the permanent intended answer. The
+	// loop is unbounded, with no deadline and no attempt ceiling. This line does
+	// not change that. The unbounded retry is a real production property and wants
+	// its own fix.
+	//
+	// Two consequences worth knowing. Clearing the flag also ACTIVATES the path and
+	// IP collision validation at cmd/endpoint.go:1047, which calls getHostIP on
+	// every named host and hard-errors when it cannot resolve. Fifteen cases across
+	// the two CreateEndpoints tests reference example.org and similar, so those now
+	// require outbound DNS to pass. And package var init runs before TestMain, so
+	// the dns-cache-ttl flag default closure at cmd/server-main.go:126 keeps its
+	// container value of 30s. That only sets a CLI default and no test reads it.
+	//
+	// Set once here rather than saved and restored per test. Every read reachable
+	// from a test is synchronous on the test goroutine today, but that is a
+	// property of the current call sites rather than a guarantee.
+	orchestrated = false
+
 	os.Exit(m.Run())
 }
 

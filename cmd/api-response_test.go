@@ -130,7 +130,13 @@ func TestGetURLScheme(t *testing.T) {
 func TestTrackingResponseWriter(t *testing.T) {
 	rw := httptest.NewRecorder()
 	trw := &trackingResponseWriter{ResponseWriter: rw}
-	trw.WriteHeader(123)
+	// ELM 2026-09-09. Was 123. The point of the arbitrary code is that
+	// trackingResponseWriter passes it through untouched, and 234 serves that just
+	// as well while remaining writable. 123 is a 1xx informational status, and as
+	// of go1.26 httptest.ResponseRecorder.Write enforces bodyAllowedForStatus, so
+	// the Write below failed with "response status code does not allow body". The
+	// recorder did not check when this test was written.
+	trw.WriteHeader(234)
 	if !trw.headerWritten {
 		t.Fatal("headerWritten was not set by WriteHeader call")
 	}
@@ -142,7 +148,7 @@ func TestTrackingResponseWriter(t *testing.T) {
 
 	// Check that WriteHeader and Write were called on the underlying response writer
 	resp := rw.Result()
-	if resp.StatusCode != 123 {
+	if resp.StatusCode != 234 {
 		t.Fatalf("unexpected status: %v", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
