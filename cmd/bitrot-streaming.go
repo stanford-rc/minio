@@ -25,6 +25,8 @@ import (
 	"io"
 	"sync"
 
+	"github.com/klauspost/reedsolomon"
+
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	"github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/ringbuffer"
@@ -104,10 +106,43 @@ func newStreamingBitrotWriterBuffer(w io.Writer, algo BitrotAlgorithm, shardSize
 	return &streamingBitrotWriter{iow: ioutil.NopCloser(w), h: algo.New(), shardSize: shardSize, canClose: nil, closeWithErr: func(err error) {}}
 }
 
+// bitrotWriterBuffer returns the backing array for the streaming writer's ring
+// buffer, and NEVER returns a zero-capacity slice.
+//
+// ELM DIVERGENCE, 2026-09-09. Wraps what used to be a bare
+// globalBytePoolCap.Load().Get() at the call site below. That global is stored
+// in exactly one place, newErasureServerPools, so a caller that has not built a
+// server pool sees a nil pool; bpool.Get() is nil-receiver safe and returns nil,
+// buf[:cap(buf)] on nil is legal Go and yields length zero, and
+// ringbuffer.NewBuffer accepted that as size 0. Upstream d4b391de1 (#19605)
+// introduced the dependency without a guard. See ErrIsZeroSize in
+// internal/ringbuffer for the failure it produced and why it stayed hidden.
+//
+// The fallback is shape-identical to a pooled buffer, same length, capacity and
+// aligned allocation, which is what makes it safe to hand to code that cannot
+// tell the two apart -- including bpool.Put on Close, which accepts it precisely
+// BECAUSE cap matches the pool's wcap. Put discards buffers whose capacity
+// differs, so if the shape ever drifts from the pool's the buffers would be
+// silently dropped on every Close and read as a slow pool starvation rather than
+// a visible fault. That is why the shape comes from bitrotWriterBufLen and
+// bitrotWriterBufCap rather than being restated here.
+func bitrotWriterBuffer() []byte {
+	if buf := globalBytePoolCap.Load().Get(); cap(buf) > 0 {
+		return buf
+	}
+	// Reachable only when the byte pool was never initialized, which in a server
+	// is an initialization-order bug. Log it: the whole point of the original
+	// defect was that a nil pool degraded silently, and substituting an unpooled
+	// allocation per concurrent shard writer would degrade silently in the other
+	// direction.
+	bugLogIf(GlobalContext, errors.New("byte pool not initialized; falling back to an unpooled bitrot buffer"))
+	return reedsolomon.AllocAligned(1, bitrotWriterBufCap)[0][:bitrotWriterBufLen]
+}
+
 // Returns streaming bitrot writer implementation.
 func newStreamingBitrotWriter(disk StorageAPI, origvolume, volume, filePath string, length int64, algo BitrotAlgorithm, shardSize int64) io.Writer {
 	h := algo.New()
-	buf := globalBytePoolCap.Load().Get()
+	buf := bitrotWriterBuffer()
 	rb := ringbuffer.NewBuffer(buf[:cap(buf)]).SetBlocking(true)
 
 	bw := &streamingBitrotWriter{

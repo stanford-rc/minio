@@ -30,6 +30,30 @@ var (
 
 	// ErrWriteOnClosed is returned when write on a closed ringbuffer.
 	ErrWriteOnClosed = errors.New("write on closed ringbuffer")
+
+	// ErrIsZeroSize is returned by any read or write against a RingBuffer with
+	// no capacity.
+	//
+	// ELM DIVERGENCE. A zero-size buffer used to be accepted by New/NewBuffer and
+	// then fail obscurely. write() computed avail == 0, truncated the payload to
+	// empty, and reached `if r.w == r.r { r.isFull = true }`, which for size 0 is
+	// vacuously true. That marked an empty buffer FULL, defeating read()'s
+	// `r.w == r.r && !r.isFull` empty guard, so read() went on to evaluate
+	// `r.r = (r.r + n) % r.size` and panicked with integer divide by zero -- in
+	// whichever goroutine happened to be reading.
+	//
+	// This value is deliberately NOT ErrIsEmpty, ErrIsFull or
+	// ErrTooMuchDataToWrite. Read and Write block on exactly those, so returning
+	// one of them from a zero-size buffer hangs the caller instead of failing it.
+	// It is also not in setErr's transient list, so it is sticky: the first
+	// operation to return it poisons the buffer, which is correct for a buffer
+	// that can never work, and is why the tests give each path a fresh buffer.
+	//
+	// Callers, and the history of how a zero-size buffer arose in practice, are
+	// documented at bitrotWriterBuffer in cmd/bitrot-streaming.go. Keeping that
+	// narrative in one place: this package is vendored MIT code and local
+	// divergence costs on every upstream sync.
+	ErrIsZeroSize = errors.New("ringbuffer has zero size")
 )
 
 // RingBuffer is a circular buffer that implement io.ReaderWriter interface.
@@ -188,6 +212,11 @@ func (r *RingBuffer) TryRead(p []byte) (n int, err error) {
 }
 
 func (r *RingBuffer) read(p []byte) (n int, err error) {
+	// Before the empty check, because a zero-size buffer can reach here with
+	// isFull set and would divide by zero below. See ErrIsZeroSize.
+	if r.size == 0 {
+		return 0, ErrIsZeroSize
+	}
 	if r.w == r.r && !r.isFull {
 		return 0, ErrIsEmpty
 	}
@@ -222,6 +251,12 @@ func (r *RingBuffer) ReadByte() (b byte, err error) {
 	defer r.mu.Unlock()
 	if err = r.readErr(true); err != nil {
 		return 0, err
+	}
+	// Before the wait loop: on a zero-size buffer no write can ever succeed, so
+	// blocking here waits forever, and if isFull was set the indexed load below
+	// panics. See ErrIsZeroSize.
+	if r.size == 0 {
+		return 0, ErrIsZeroSize
 	}
 	for r.w == r.r && !r.isFull {
 		if r.block {
@@ -312,6 +347,12 @@ func (r *RingBuffer) TryWrite(p []byte) (n int, err error) {
 }
 
 func (r *RingBuffer) write(p []byte) (n int, err error) {
+	// A zero-size buffer can never accept data, and must not report
+	// ErrTooMuchDataToWrite, which the blocking Write path waits on. See
+	// ErrIsZeroSize.
+	if r.size == 0 {
+		return 0, ErrIsZeroSize
+	}
 	if r.isFull {
 		return 0, ErrIsFull
 	}
@@ -348,7 +389,12 @@ func (r *RingBuffer) write(p []byte) (n int, err error) {
 	if r.w == r.size {
 		r.w = 0
 	}
-	if r.w == r.r {
+	// r.size > 0 is UNREACHABLE given the guard at the top of this function, and
+	// kept deliberately: it is the invariant that was actually violated. For
+	// size 0, w == r is vacuously true, and marking an empty buffer full is what
+	// defeated read()'s empty guard. Stating it here means a future edit that
+	// removes or relaxes the entry guard does not silently restore the panic.
+	if r.w == r.r && r.size > 0 {
 		r.isFull = true
 	}
 
@@ -399,6 +445,11 @@ func (r *RingBuffer) TryWriteByte(c byte) error {
 }
 
 func (r *RingBuffer) writeByte(c byte) error {
+	// Same reason as write(): on a zero-size buffer r.buf is empty, so the
+	// indexed store below panics with index out of range. See ErrIsZeroSize.
+	if r.size == 0 {
+		return ErrIsZeroSize
+	}
 	if r.w == r.r && r.isFull {
 		return ErrIsFull
 	}
@@ -408,7 +459,9 @@ func (r *RingBuffer) writeByte(c byte) error {
 	if r.w == r.size {
 		r.w = 0
 	}
-	if r.w == r.r {
+	// Unreachable for the same reason as in write(), and kept for the same
+	// reason: it documents the violated invariant rather than only preventing it.
+	if r.w == r.r && r.size > 0 {
 		r.isFull = true
 	}
 

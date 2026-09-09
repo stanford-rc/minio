@@ -1047,3 +1047,90 @@ func timeout(after time.Duration) (cancel func()) {
 		close(cc)
 	}
 }
+
+// ELM 2026-09-09. Regression tests for the zero-size buffer.
+//
+// EACH CASE GETS A FRESH BUFFER, and that is load-bearing rather than tidiness.
+// ErrIsZeroSize is not in setErr's transient list, so the first operation that
+// returns it stores it in r.err permanently. Every entry point checks r.err (or
+// readErr) before reaching its own r.size == 0 guard, so a test that reuses one
+// buffer exercises only the guard on whichever path it touched first.
+//
+// An earlier version of these tests did exactly that -- one buffer, write first.
+// Mutation testing on 2026-09-09 showed only write()'s guard was covered:
+// removing the guard from read(), ReadByte() or writeByte() left the tests
+// green. The masked failures are real and distinct: WriteByte on a fresh
+// zero-size buffer panics with index out of range, and a blocking read-first
+// hangs rather than erroring.
+func zeroSizeCtors() map[string]func() *RingBuffer {
+	return map[string]func() *RingBuffer{
+		"New(0)":           func() *RingBuffer { return New(0) },
+		"NewBuffer(nil)":   func() *RingBuffer { return NewBuffer(nil) },
+		"NewBuffer(empty)": func() *RingBuffer { return NewBuffer([]byte{}) },
+	}
+}
+
+func TestZeroSizeBufferEveryPathFirst(t *testing.T) {
+	// One entry per guard, each invoked FIRST on a fresh buffer so its own guard
+	// is the one under test rather than the sticky error from a previous call.
+	paths := map[string]func(*RingBuffer) error{
+		"Read":         func(rb *RingBuffer) error { _, err := rb.Read(make([]byte, 8)); return err },
+		"Write":        func(rb *RingBuffer) error { _, err := rb.Write([]byte("x")); return err },
+		"ReadByte":     func(rb *RingBuffer) error { _, err := rb.ReadByte(); return err },
+		"WriteByte":    func(rb *RingBuffer) error { return rb.WriteByte('x') },
+		"TryRead":      func(rb *RingBuffer) error { _, err := rb.TryRead(make([]byte, 8)); return err },
+		"TryWrite":     func(rb *RingBuffer) error { _, err := rb.TryWrite([]byte("x")); return err },
+		"TryWriteByte": func(rb *RingBuffer) error { return rb.TryWriteByte('x') },
+	}
+	for ctorName, ctor := range zeroSizeCtors() {
+		for pathName, call := range paths {
+			t.Run(ctorName+"/"+pathName+"-first", func(t *testing.T) {
+				rb := ctor()
+				if err := call(rb); err != ErrIsZeroSize {
+					t.Errorf("%s as the first op on a zero-size buffer = %v, want ErrIsZeroSize", pathName, err)
+				}
+				if rb.IsFull() {
+					t.Error("a zero-size buffer must never report itself full; that is what defeated the read guard")
+				}
+			})
+		}
+	}
+}
+
+// ErrIsZeroSize must not be any of the errors Read and Write block on, or a
+// zero-size buffer in blocking mode waits forever instead of erroring.
+func TestZeroSizeErrorIsNotABlockingError(t *testing.T) {
+	for _, blocking := range []error{ErrIsEmpty, ErrIsFull, ErrTooMuchDataToWrite} {
+		if ErrIsZeroSize == blocking {
+			t.Errorf("ErrIsZeroSize must be distinct from %v; Read/Write wait on that", blocking)
+		}
+	}
+}
+
+// Blocking mode, each direction FIRST on its own buffer. These are the cases
+// that hang rather than panic, so a timeout here is the failure.
+func TestZeroSizeBlockingDoesNotHang(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(*RingBuffer) error
+	}{
+		{"read-first", func(rb *RingBuffer) error { _, err := rb.Read(make([]byte, 8)); return err }},
+		{"write-first", func(rb *RingBuffer) error { _, err := rb.Write([]byte("x")); return err }},
+		{"readByte-first", func(rb *RingBuffer) error { _, err := rb.ReadByte(); return err }},
+		{"writeByte-first", func(rb *RingBuffer) error { return rb.WriteByte('x') }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rb := New(0).SetBlocking(true)
+			done := make(chan error, 1)
+			go func() { done <- tc.call(rb) }()
+			select {
+			case err := <-done:
+				if err != ErrIsZeroSize {
+					t.Errorf("blocking %s on zero size = %v, want ErrIsZeroSize", tc.name, err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("blocking %s on a zero-size buffer hung; it must return ErrIsZeroSize", tc.name)
+			}
+		})
+	}
+}

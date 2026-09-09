@@ -63,6 +63,7 @@ import (
 	"github.com/minio/mux"
 	"github.com/minio/pkg/v3/policy"
 	"github.com/stanford-rc/minio/internal/auth"
+	"github.com/stanford-rc/minio/internal/bpool"
 	"github.com/stanford-rc/minio/internal/config"
 	"github.com/stanford-rc/minio/internal/crypto"
 	"github.com/stanford-rc/minio/internal/hash"
@@ -114,6 +115,39 @@ func TestMain(m *testing.M) {
 	globalConsoleSys = NewConsoleLogger(context.Background(), io.Discard)
 
 	globalInternodeTransport = NewInternodeHTTPTransport(0)()
+
+	// Initialize the shared byte pool.
+	//
+	// ELM 2026-09-09. globalBytePoolCap is stored in exactly ONE place in
+	// production, newErasureServerPools (cmd/erasure-server-pool.go), so any test
+	// that exercises a lower layer directly gets a nil pool. bpool.Get()'s
+	// nil-receiver guard then returns a zero-length slice rather than failing, and
+	// newStreamingBitrotWriter sizes its ring buffer from cap() of that slice --
+	// producing a zero-size buffer that panics with integer divide by zero on the
+	// first read. See ErrIsZeroSize in internal/ringbuffer.
+	//
+	// Upstream d4b391de1 (#19605, 2024-05-14) introduced that dependency when it
+	// replaced an io.Pipe with the ring buffer, without initializing the pool for
+	// tests or guarding for nil. Bisected 2026-09-09: the parent commit de4d3dac0
+	// passes.
+	//
+	// It is ORDER-DEPENDENT, not always-fatal. TestIAMInternalIDPServerSuite sorts
+	// earlier, builds an ObjectLayer, and populates the pool as a side effect, and
+	// nothing resets it -- so a full-package run masks the fault entirely and
+	// upstream CI stays green. It bites bitrot_test.go, erasure-decode_test.go,
+	// erasure-encode_test.go, erasure-heal_test.go and xl-storage_test.go whenever
+	// that ordering is broken, which is every way we actually run these: a -run
+	// filter, -shuffle, per-file classification, a bisect script. Also on Windows,
+	// where that IAM suite skips.
+	//
+	// This line removes the order dependence for the whole package. The call site
+	// in cmd/bitrot-streaming.go is guarded separately, so production no longer
+	// depends on a pool existing either.
+	//
+	// 256 matches what production uses under globalIsCICD, which TestMain sets
+	// above. Populate() is deliberately not called; production only pre-allocates
+	// at n >= 16384.
+	globalBytePoolCap.Store(bpool.NewBytePoolCap(256, blockSizeV2, blockSizeV2*2))
 
 	initHelp()
 

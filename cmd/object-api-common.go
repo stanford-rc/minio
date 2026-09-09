@@ -36,6 +36,13 @@ const (
 	// Block size used in erasure coding version 2.
 	blockSizeV2 = 1 * humanize.MiByte
 
+	// ELM 2026-09-09. The shape of every buffer handed out by globalBytePoolCap,
+	// named once so newErasureServerPools and bitrotWriterBuffer's fallback
+	// cannot drift. bpool.Put discards buffers whose capacity differs from the
+	// pool's, so a mismatch would stop recycling silently.
+	bitrotWriterBufLen = blockSizeV2
+	bitrotWriterBufCap = blockSizeV2 * 2
+
 	// Buckets meta prefix.
 	bucketMetaPrefix = "buckets"
 

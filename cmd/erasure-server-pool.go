@@ -108,7 +108,11 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 
 	// Initialize byte pool once for all sets, bpool size is set to
 	// setCount * setDriveCount with each memory upto blockSizeV2.
-	buffers := bpool.NewBytePoolCap(n, blockSizeV2, blockSizeV2*2)
+	//
+	// The width and capacity are named because bitrotWriterBuffer's fallback must
+	// match them exactly: bpool.Put drops any buffer whose cap differs from the
+	// pool's, so a divergence here would silently stop recycling those buffers.
+	buffers := bpool.NewBytePoolCap(n, bitrotWriterBufLen, bitrotWriterBufCap)
 	if n >= 16384 {
 		// pre-populate buffers only n >= 16384 which is (32Gi/2Mi)
 		// for all setups smaller than this avoid pre-alloc.
