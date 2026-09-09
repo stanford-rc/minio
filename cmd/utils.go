@@ -289,9 +289,11 @@ const (
 	globalMaxObjectSize = 5 * humanize.TiByte
 
 	// s3MinPartSize is the S3 minimum part size, and upstream MinIO's value for
-	// globalMinPartSize. Named rather than inlined because upstream tests assert
-	// S3 multipart validation against small fixtures and have to lower the server
-	// floor to it; see withS3MinPartSize.
+	// globalMinPartSize. Named rather than inlined because TestMain lowers the
+	// package-wide floor to it, since upstream tests assert S3 multipart
+	// validation against fixtures far below the Elm default. The few tests that
+	// pin the Elm default raise the floor back for their own duration; see
+	// withElmMinPartSize in cmd/elm_minpartsize_test.go.
 	s3MinPartSize = 5 * humanize.MiByte
 
 	// Maximum Part ID for multipart upload is 10000
