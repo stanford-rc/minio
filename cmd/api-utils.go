@@ -105,13 +105,28 @@ func s3EncodeName(name, encodingType string) string {
 	return name
 }
 
+// elmCmdPkgPrefix is this module's path for package cmd, as runtime.Func.Name
+// reports it.
+//
+// ELM 2026-09-09. Three call sites strip this prefix from a reflected symbol
+// name, and 4fd5af8cf rewrote the import statements to github.com/stanford-rc
+// without touching any of the three string literals that spelled it out. Every
+// one silently stopped matching: handler names in the audit log and API metrics
+// (getHandlerName below), operation names in mc admin trace (getOpName in
+// cmd/http-tracer.go) and lock-source labels (getSource in
+// cmd/namespace-lock.go) all began carrying the full package path.
+//
+// One constant so the next rename breaks one place, and TestGetHandlerName plus
+// TestGetSource catch it.
+const elmCmdPkgPrefix = "github.com/stanford-rc/minio/cmd."
+
 // getHandlerName returns the name of the handler function. It takes the type
 // name as a string to clean up the name retrieved via reflection. This function
 // only works correctly when the type is present in the cmd package.
 func getHandlerName(f http.HandlerFunc, cmdType string) string {
 	name := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
 
-	packageName := fmt.Sprintf("github.com/minio/minio/cmd.%s.", cmdType)
+	packageName := fmt.Sprintf("%s%s.", elmCmdPkgPrefix, cmdType)
 	name = strings.TrimPrefix(name, packageName)
 	name = strings.TrimSuffix(name, "Handler-fm")
 	name = strings.TrimSuffix(name, "-fm")

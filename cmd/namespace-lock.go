@@ -318,8 +318,11 @@ func getSource(n int) string {
 	pc, filename, lineNum, ok := runtime.Caller(n)
 	if ok {
 		filename = pathutil.Base(filename)
-		funcName = strings.TrimPrefix(runtime.FuncForPC(pc).Name(),
-			"github.com/minio/minio/cmd.")
+		// ELM 2026-09-09. Was the literal "github.com/minio/minio/cmd.", which
+		// 4fd5af8cf left behind when it renamed the module, so this stopped
+		// stripping anything and every lock-source label carried the full package
+		// path. See elmCmdPkgPrefix in cmd/api-utils.go. TestGetSource is the guard.
+		funcName = strings.TrimPrefix(runtime.FuncForPC(pc).Name(), elmCmdPkgPrefix)
 	} else {
 		filename = "<unknown>"
 		lineNum = 0

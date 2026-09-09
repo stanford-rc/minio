@@ -26,7 +26,9 @@ import (
 var errMaxVersionsExceeded = StorageErr("maximum versions exceeded, please delete few versions to proceed")
 
 // errUnexpected - unexpected error, requires manual intervention.
-var errUnexpected = StorageErr("unexpected error, please report this issue at https://github.com/minio/minio/issues")
+// ELM 2026-09-09. Was https://github.com/minio/minio/issues. That tracker went
+// away with upstream, so the message was directing operators nowhere.
+var errUnexpected = StorageErr("unexpected error, please report this issue at https://github.com/stanford-rc/minio/issues")
 
 // errCorruptedFormat - corrupted format.
 var errCorruptedFormat = StorageErr("corrupted format")
