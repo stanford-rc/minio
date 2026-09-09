@@ -38,6 +38,10 @@ import (
 	"github.com/klauspost/readahead"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7/pkg/tags"
+	"github.com/minio/pkg/v3/env"
+	"github.com/minio/pkg/v3/mimedb"
+	"github.com/minio/pkg/v3/sync/errgroup"
+	"github.com/minio/sio"
 	"github.com/stanford-rc/minio/internal/bucket/lifecycle"
 	"github.com/stanford-rc/minio/internal/bucket/object/lock"
 	"github.com/stanford-rc/minio/internal/bucket/replication"
@@ -49,9 +53,6 @@ import (
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
 	"github.com/stanford-rc/minio/internal/logger"
-	"github.com/minio/pkg/v3/mimedb"
-	"github.com/minio/pkg/v3/sync/errgroup"
-	"github.com/minio/sio"
 )
 
 // list all errors which can be ignored in object operations.
@@ -451,13 +452,23 @@ func (er erasureObjects) GetObjectInfo(ctx context.Context, bucket, object strin
 	return er.getObjectInfo(ctx, bucket, object, opts)
 }
 
-func auditDanglingObjectDeletion(ctx context.Context, bucket, object, versionID string, tags map[string]string) {
+// Audit events emitted when an object is judged dangling.  Two names, not one,
+// so a refusal is distinguishable from a deletion in the audit feed: "we would
+// have deleted this" and "we deleted this" are different operational facts and
+// collapsing them makes the feed useless for deciding whether the guard is
+// working.
+const (
+	auditDanglingDeleted = "DeleteDanglingObject"
+	auditDanglingRefused = "RefuseDanglingObject"
+)
+
+func auditDanglingObjectDeletion(ctx context.Context, event, bucket, object, versionID string, tags map[string]string) {
 	if len(logger.AuditTargets()) == 0 {
 		return
 	}
 
 	opts := AuditLogOptions{
-		Event:     "DeleteDanglingObject",
+		Event:     event,
 		Bucket:    bucket,
 		Object:    object,
 		VersionID: versionID,
@@ -467,9 +478,55 @@ func auditDanglingObjectDeletion(ctx context.Context, bucket, object, versionID 
 	auditLogInternal(ctx, opts)
 }
 
+// Whether MinIO may act on a dangling verdict by deleting the object.
+//
+// WHY THIS IS A SWITCH AND WHY IT DEFAULTS OFF ON THIS FORK.
+//
+// isObjectDangling returning true means "no readable copy can be assembled".
+// deleteIfDangling then removes the whole object VERSION from every drive, so a
+// single part below read quorum in a 203-part object destroys all 203, including
+// the ~200 that are intact.  It is gated on neither opts.Remove nor a scan mode,
+// so a plain `mc admin heal` reaches it, as do the scanner and MRF read-repair.
+//
+// The operating posture on Elm is that unhealable objects are reported,
+// evaluated, written up, and then removed deliberately.  MinIO deleting one on
+// its own initiative does not conflict with that because deletion is wrong; it
+// conflicts because it destroys the evidence the write-up needs, races the human
+// workflow, and afterwards cannot be distinguished from the intended removal,
+// which makes "we are at zero bad objects" unverifiable rather than true.
+//
+// Measured cost of defaulting off: over the 90 days to 2026-08-31 exactly one
+// DeleteDanglingObject fired on this fleet, on a 466-byte stale STS credential
+// inside .minio.sys.  So `off` forgoes roughly one stale config file a quarter
+// and keeps every user object for triage.
+const (
+	danglingDeleteOn  = "on"  // upstream behaviour: act on the verdict
+	danglingDeleteOff = "off" // audit the verdict and decline to act
+)
+
+// Deliberately two modes, not three.  An earlier sketch had `off` and `log`
+// differing only so that changing the default would be a config change, but they
+// behave identically: `off` always audits, because the audit record IS the
+// report this exists to preserve.  Two names for one behaviour would be a
+// distinction the code does not honour.
+func danglingDeleteMode() string {
+	switch v := env.Get("MINIO_DANGLING_DELETE", danglingDeleteOff); v {
+	case danglingDeleteOn, danglingDeleteOff:
+		return v
+	default:
+		return danglingDeleteOff
+	}
+}
+
 func joinErrs(errs []error) string {
 	var s string
-	for i := range s {
+	// Was `for i := range s`, which ranges over the EMPTY accumulator and so
+	// never executes: joinErrs always returned "". That silently blanked the
+	// `merrs` tag on every DeleteDanglingObject audit record, which is the field
+	// naming why each drive's metadata was unusable, i.e. the evidence for the
+	// deletion. Verified against a production record from 2026-08-12, which
+	// carried "merrs": "".
+	for i := range errs {
 		if s != "" {
 			s += ","
 		}
@@ -531,7 +588,31 @@ func (er erasureObjects) deleteIfDangling(ctx context.Context, bucket, object st
 		tags["caller"] = fmt.Sprintf("%s:%d", file, line)
 	}
 
-	defer auditDanglingObjectDeletion(ctx, bucket, object, m.VersionID, tags)
+	// The guard.  Placed here, after the tags are built and before anything is
+	// removed, so a refusal produces the SAME evidence a deletion would: the
+	// per-drive metadata errors, the per-part error map, size, mod time and
+	// geometry.  That record is the report the deliberate-removal workflow reads.
+	//
+	// errErasureReadQuorum is the function's own existing refusal return, used by
+	// the !ok branch above, so every caller already handles it and none learns a
+	// new error.  In healObject it surfaces as a heal that repaired nothing,
+	// which is the same outcome as the release's refusal on a two-drive spread.
+	if mode := danglingDeleteMode(); mode != danglingDeleteOn {
+		tags["refused"] = mode
+		auditDanglingObjectDeletion(ctx, auditDanglingRefused, bucket, object, m.VersionID, tags)
+		// LogOnceIf, not LogIf: the scanner re-evaluates the same objects every
+		// pass, so a fixed population would otherwise become a recurring alarm
+		// that trains operators to ignore it.
+		storageLogOnceIf(ctx, fmt.Errorf(
+			"refusing to delete dangling object %s/%s (version %s): "+
+				"MINIO_DANGLING_DELETE=%s. The object is unreadable and is being "+
+				"left in place for triage; audit event %s carries the evidence",
+			bucket, object, m.VersionID, mode, auditDanglingRefused),
+			"dangling-delete-refused-"+bucket+"/"+object)
+		return FileInfo{}, errErasureReadQuorum
+	}
+
+	defer auditDanglingObjectDeletion(ctx, auditDanglingDeleted, bucket, object, m.VersionID, tags)
 
 	fi := FileInfo{
 		VersionID: m.VersionID,

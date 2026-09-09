@@ -647,6 +647,13 @@ func TestHealingDanglingObject(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
+	// Elm 2026-08-31: this test asserts that a dangling version is
+	// DELETED by heal, which the MINIO_DANGLING_DELETE guard now gates and which
+	// defaults to off on this fork.  Opting in explicitly keeps the test doing
+	// what it was written to do; TestDanglingObjectSurvivesWithGuardOff is the
+	// same scenario with the guard at its default.
+	t.Setenv("MINIO_DANGLING_DELETE", "on")
+
 	resetGlobalHealState()
 	defer resetGlobalHealState()
 
@@ -981,6 +988,18 @@ func TestHealCorrectQuorum(t *testing.T) {
 func TestHealObjectCorruptedPools(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
+
+	// Elm 2026-09-09: its own comment at the assertion says "since majority of
+	// xl.meta's are not available, object should be successfully deleted", so this
+	// test depends on deleteIfDangling actually deleting. The
+	// MINIO_DANGLING_DELETE guard gates that and defaults to off on this fork, so
+	// the object survives and the xl.meta assertion at line ~1159 fails. Opting in
+	// keeps the test doing what it was written to do, same as
+	// TestHealingDanglingObject above.
+	//
+	// Found by running the heal family with the guard off and on and diffing: this
+	// is the ONLY test of the family the default affects.
+	t.Setenv("MINIO_DANGLING_DELETE", "on")
 
 	resetGlobalHealState()
 	defer resetGlobalHealState()
