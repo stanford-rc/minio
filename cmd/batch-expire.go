@@ -37,7 +37,7 @@ import (
 	"github.com/stanford-rc/minio/internal/bucket/versioning"
 	xhttp "github.com/stanford-rc/minio/internal/http"
 	xioutil "github.com/stanford-rc/minio/internal/ioutil"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // expire: # Expire objects that match a condition
