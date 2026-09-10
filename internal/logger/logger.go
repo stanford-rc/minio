@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -145,7 +146,7 @@ func uniqueEntries(paths []string) []string {
 }
 
 // Init sets the trimStrings to possible GOPATHs
-// and GOROOT directories. Also append github.com/minio/minio
+// and GOROOT directories. Also appends this module's path.
 // This is done to clean up the filename, when stack trace is
 // displayed when an error happens.
 func Init(goPath string, goRoot string) {
@@ -189,10 +190,20 @@ func Init(goPath string, goRoot string) {
 	// Remove duplicate entries.
 	trimStrings = uniqueEntries(trimStrings)
 
-	// Add "github.com/minio/minio" as the last to cover
-	// paths like "{GOROOT}/src/github.com/minio/minio"
-	// and "{GOPATH}/src/github.com/minio/minio"
-	trimStrings = append(trimStrings, filepath.Join("github.com", "minio", "minio")+string(filepath.Separator))
+	// Add this module's path as the last to cover paths like
+	// "{GOROOT}/src/<module>" and "{GOPATH}/src/<module>".
+	//
+	// ELM 2026-09-09. This was hardcoded to github.com/minio/minio, which
+	// 4fd5af8cf left behind when it renamed the module, so trimTrace stopped
+	// trimming anything and every logged source path carried the full package
+	// path. Read from the build info rather than written out, so it cannot drift
+	// again. Falls back to the old literal when build info is unavailable, which
+	// is no worse than the behavior it replaces.
+	modPath := "github.com/minio/minio"
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Path != "" {
+		modPath = bi.Main.Path
+	}
+	trimStrings = append(trimStrings, filepath.FromSlash(modPath)+string(filepath.Separator))
 }
 
 func trimTrace(f string) string {

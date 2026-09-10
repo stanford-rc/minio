@@ -29,17 +29,42 @@ import (
 	"time"
 )
 
+// cmdPkg returns the import path of this module's cmd package.
+//
+// ELM 2026-09-09. These seven targets were hardcoded to
+// github.com/minio/minio/cmd, which 4fd5af8cf left behind when it renamed the
+// module. The linker silently ignores a -X whose symbol does not exist, so
+// every binary built here reported "DEVELOPMENT.GOGET" with no commit id and a
+// copyright year of 0000, and nothing failed to warn about it.
+//
+// Resolved from the module rather than written out, so it cannot drift again.
+// This program already shells out to git, so shelling out to go is in keeping.
+func cmdPkg() string {
+	out, err := exec.Command("go", "list", "-m").Output()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error resolving module path: ", err)
+		os.Exit(1)
+	}
+	mod := strings.TrimSpace(string(out))
+	if mod == "" {
+		fmt.Fprintln(os.Stderr, "Error resolving module path: empty result from 'go list -m'")
+		os.Exit(1)
+	}
+	return mod + "/cmd."
+}
+
 func genLDFlags(version string) string {
 	releaseTag, date := releaseTag(version)
 	copyrightYear := strconv.Itoa(date.Year())
+	pkg := cmdPkg()
 	ldflagsStr := "-s -w"
-	ldflagsStr += " -X github.com/minio/minio/cmd.Version=" + version
-	ldflagsStr += " -X github.com/minio/minio/cmd.CopyrightYear=" + copyrightYear
-	ldflagsStr += " -X github.com/minio/minio/cmd.ReleaseTag=" + releaseTag
-	ldflagsStr += " -X github.com/minio/minio/cmd.CommitID=" + commitID()
-	ldflagsStr += " -X github.com/minio/minio/cmd.ShortCommitID=" + commitID()[:12]
-	ldflagsStr += " -X github.com/minio/minio/cmd.GOPATH=" + os.Getenv("GOPATH")
-	ldflagsStr += " -X github.com/minio/minio/cmd.GOROOT=" + os.Getenv("GOROOT")
+	ldflagsStr += " -X " + pkg + "Version=" + version
+	ldflagsStr += " -X " + pkg + "CopyrightYear=" + copyrightYear
+	ldflagsStr += " -X " + pkg + "ReleaseTag=" + releaseTag
+	ldflagsStr += " -X " + pkg + "CommitID=" + commitID()
+	ldflagsStr += " -X " + pkg + "ShortCommitID=" + commitID()[:12]
+	ldflagsStr += " -X " + pkg + "GOPATH=" + os.Getenv("GOPATH")
+	ldflagsStr += " -X " + pkg + "GOROOT=" + os.Getenv("GOROOT")
 	return ldflagsStr
 }
 
