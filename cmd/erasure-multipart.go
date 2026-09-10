@@ -674,8 +674,20 @@ func (er erasureObjects) enforceWriteSet(ctx context.Context, stage, bucket, obj
 
 	// Unrecoverable is refused whether or not enforcement is on: fewer surviving
 	// shards than data blocks cannot be reconstructed from parity, so returning 200
-	// would be a promise the cluster cannot keep. Under EC:1 writeQuorum already
-	// equals DataBlocks so Encode should have failed first; defense in depth.
+	// would be a promise the cluster cannot keep.
+	//
+	// UNREACHABLE AT BOTH CALL SITES, for every parity setting.
+	// FileInfo.WriteQuorum returns DataBlocks, or DataBlocks+1 when
+	// DataBlocks == ParityBlocks (cmd/storage-datatypes.go), so
+	// writeQuorum >= dataBlocks always. erasure.Encode returns nil only once
+	// writeQuorum writers survived, and renamePart returns nil only once
+	// reduceWriteQuorumErrs saw writeQuorum successes. Either way
+	// landed >= writeQuorum >= dataBlocks by the time control reaches here.
+	//
+	// Kept as defense in depth, and tested directly by
+	// TestEnforceWriteSetRefusesOnlyBelowDataBlocks rather than through the API,
+	// because an end-to-end test cannot distinguish this refusal from the
+	// upstream quorum check that fires first.
 	if landed < dataBlocks {
 		storageLogIf(ctx, fmt.Errorf(
 			"multipart write-set shortfall at %s on %s/%s part %d: landed on %d of %d attempted drives (lost healthy %v, lost unhealthy %v, data blocks %d); UNRECOVERABLE, refusing the part because it could not be reconstructed from parity",
@@ -840,9 +852,22 @@ func (er erasureObjects) PutObjectPart(ctx context.Context, bucket, object, uplo
 	// margin. There is no server-side retry available: the shard's only copy was the
 	// request body, already consumed, and storageRESTClient.CreateFile cannot retry
 	// a stream it has drained.
+	// A writer that failed its CLOSE counts as lost too. multiWriter only nils
+	// writers that failed a Write (cmd/erasure-encode.go), so a drive whose final
+	// bitrot flush failed arrives here non-nil, and counting it as landed hands it
+	// to renamePart, which promotes a short shard that fails verification on the
+	// first read. closeBitrotWriters returns errors index-aligned with writers, and
+	// reduceWriteQuorumErrs above has already returned unless at least writeQuorum
+	// of them are nil: reduceErrs skips ignored errors rather than counting them as
+	// successes, so its maxCount >= quorum can only be met by nil. Dropping the
+	// failures here therefore cannot take the set below quorum.
 	landed := 0
 	for i := range writers {
 		if writers[i] == nil {
+			onlineDisks[i] = nil
+			continue
+		}
+		if i < len(closeErrs) && closeErrs[i] != nil {
 			onlineDisks[i] = nil
 			continue
 		}
@@ -1289,6 +1314,19 @@ func healableDivergence(placement partPlacement, partInfos []ObjectPartInfo,
 // object destroys all 203 including the ~200 intact ones.  That path is gated on
 // neither opts.Remove nor a scan mode.  An object in that state needs a person, not
 // a heal.
+//
+// On this fork deleteIfDangling honours MINIO_DANGLING_DELETE, which defaults to
+// off, so that deletion is disarmed by default and the paragraph above describes
+// upstream rather than the default configuration here.  Both guards are kept
+// because they are independently reversible: an operator setting
+// MINIO_DANGLING_DELETE=on re-arms the destructive path, and this is then the only
+// thing between a write-set shortfall and a 203-part object being deleted.
+//
+// THE VERDICT IS EVALUATED HERE AND ACTED ON LATER.  healRoutine sleeps before
+// running, so a part sitting at exactly dataBlocks passes this guard and can be
+// below quorum by the time heal looks at it.  Nothing in this function closes that
+// window; the dangling-delete default is what bounds the consequence, which is the
+// other reason not to rely on this guard alone.
 func shouldQueueWriteSetHeal(placement partPlacement, underReplicated []int,
 	committed uint64, dataBlocks int,
 ) (bool, []int) {
@@ -1323,9 +1361,12 @@ func shouldQueueWriteSetHeal(placement partPlacement, underReplicated []int,
 // compared against another. One bitmask per part closes that, with no metadata
 // change and no extra I/O: O(drives x parts) integer ops on data already in memory.
 //
-// A drive down for the whole upload is missing from EVERY part's set, so the sets
-// agree and nothing is reported. Only a drive that took some parts and not others
-// produces a strict subset, which is exactly the fault.
+// A drive down for the whole upload is missing from every part's set AND from the
+// reference set, because the reference set skips drives that are not online, so the
+// sets agree and nothing is reported. Getting that exclusion wrong is not a small
+// error: it reports every part of every upload completed during any node outage.
+// What produces a strict subset is a drive that took some parts and not others, or
+// one that stayed online and served none, which is exactly the fault.
 func readParts(ctx context.Context, disks []StorageAPI, bucket string, partMetaPaths []string, partNumbers []int, readQuorum int) ([]ObjectPartInfo, []int, partPlacement, error) {
 	g := errgroup.WithNErrs(len(disks))
 
@@ -1372,16 +1413,25 @@ func readParts(ctx context.Context, disks []StorageAPI, bucket string, partMetaP
 	// Measured: one drive holding none of an object's parts produced no divergence
 	// between siblings and went unreported.
 	//
-	// A genuinely offline drive is nil here, which is exactly how MinIO represents
-	// it, so it is excluded and cannot raise a false positive. A drive that is
-	// online but could not serve metadata IS included, and flagging it is correct:
-	// heal is the right response to an online drive that cannot answer.
+	// Offline drives are excluded, and BOTH ways MinIO represents one have to be
+	// handled. A nil entry is one. The other, and the common one when a node is
+	// down, is that er.getDisks() keeps returning that node's storageRESTClient:
+	// non-nil, and GetDiskLoc answers from the endpoint without touching the
+	// network. Such a drive never had a chance to serve this read, so counting it
+	// in the reference set marks EVERY part of the upload as under-replicated and
+	// queues a heal for every multipart object completed during the outage.
+	//
+	// A drive that is online but could not serve metadata IS still included, and
+	// flagging it is correct: heal is the right response to an online drive that
+	// cannot answer. That case is what this reference set exists for, and it is
+	// also what catches a drive that stayed up and dropped every part.
 	var usable uint64
 	if trackSets {
 		for idx := range disks {
-			if diskBit[idx] >= 0 {
-				usable |= 1 << uint(diskBit[idx])
+			if diskBit[idx] < 0 || !disks[idx].IsOnline() {
+				continue
 			}
+			usable |= 1 << uint(diskBit[idx])
 		}
 	}
 
@@ -1860,10 +1910,6 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 		return oi, toObjectErr(err, bucket, object, uploadID)
 	}
 
-	if err = er.commitRenameDataDir(ctx, bucket, object, oldDataDir, onlineDisks, writeQuorum); err != nil {
-		return ObjectInfo{}, toObjectErr(err, bucket, object, uploadID)
-	}
-
 	// FAIL THE COMMIT when a part has become unreadable.
 	//
 	// This is the third response, alongside refusing at the part boundary and
@@ -1891,6 +1937,24 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 	// so it does not carry the client amplification cost that makes `reject`
 	// unusable against a client mix dominated by one that cancels whole transfer runs
 	// on any failure.
+	//
+	// PLACED BEFORE commitRenameDataDir, DELIBERATELY, and this is load-bearing.
+	// commitRenameDataDir recursively Deletes the previous version's data dir, so
+	// refusing after it ran would destroy the one thing still worth having. Checking
+	// first leaves that data in place. renameData's OldDataDir is only non-empty when
+	// an existing version at this path is being replaced and its data dir is not
+	// shared (cmd/xl-storage.go, "Replace the data of null version or any other
+	// existing version-id"), so the exposure is overwrites of NON-VERSIONED objects.
+	// A versioned PUT gets a fresh version id, findVersionStr misses, OldDataDir
+	// stays empty and nothing was ever going to be deleted.
+	//
+	// WHAT THIS DOES NOT UNDO: renameData has already written the new xl.meta at the
+	// destination, so the object path resolves to the unreadable version even though
+	// the client is told the commit failed. Reversing that means rewriting xl.meta
+	// back to the prior version across the set, which is outside what this check
+	// does. So a refusal here means: the client knows, the staging shards survive,
+	// and a replaced non-versioned object's old data dir survives. It does not mean
+	// the namespace is unchanged.
 	if !opts.Speedtest {
 		var committed uint64
 		for i := range onlineDisks {
@@ -1909,13 +1973,17 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 				}
 			}
 			storageLogIf(ctx, fmt.Errorf(
-				"multipart commit-set collapse on %s/%s: part(s) %v fell below %d data blocks once the commit set narrowed (held %#x, committed %#x, usable at read %#x); failing the commit so the staging shards are retained and the client is told",
-				bucket, object, nums, fi.Erasure.DataBlocks, placement.held, committed, placement.usable))
+				"multipart commit-set collapse on %s/%s: part(s) %v fell below %d data blocks once the commit set narrowed (held %#x, committed %#x, usable at read %#x); failing the commit so the staging shards under %s are retained and the client is told. The destination xl.meta HAS already been written by renameData, so this object path now resolves to the unreadable version; commitRenameDataDir has NOT run, so a replaced version's data dir (old data dir %q, empty when versioned) survives. Recover from the staging shards; do not read this as nothing having happened",
+				bucket, object, nums, fi.Erasure.DataBlocks, placement.held, committed, placement.usable, uploadIDPath, oldDataDir))
 			if len(nums) > 0 {
 				return oi, toObjectErr(InvalidPart{PartNumber: nums[0]}, bucket, object, uploadID)
 			}
 			return oi, toObjectErr(errErasureWriteQuorum, bucket, object, uploadID)
 		}
+	}
+
+	if err = er.commitRenameDataDir(ctx, bucket, object, oldDataDir, onlineDisks, writeQuorum); err != nil {
+		return ObjectInfo{}, toObjectErr(err, bucket, object, uploadID)
 	}
 
 	if !opts.Speedtest && len(versions) > 0 {

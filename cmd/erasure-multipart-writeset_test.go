@@ -215,7 +215,13 @@ func TestMultipartPartWriteSetRecoveryIsClean(t *testing.T) {
 // failing, erasure.Encode fails write quorum on its own and returns first, so the
 // error may come from either check. Both are correct answers to the same
 // question; what must never happen is success.
-func TestMultipartPartWriteSetUnrecoverableAlwaysRefused(t *testing.T) {
+//
+// SCOPE: this proves an unrecoverable part is refused, not that enforceWriteSet is
+// what refused it. It cannot, because upstream's own writeQuorum check inside
+// erasure.Encode fires first and produces the same error, which means this passes
+// on an unpatched tree too. The refusal branch itself is covered by
+// TestEnforceWriteSetRefusesOnlyBelowDataBlocks, which calls it directly.
+func TestMultipartPartUnrecoverableIsAlwaysRefusedEndToEnd(t *testing.T) {
 	for _, mode := range []string{"on", "off"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("MINIO_MULTIPART_WRITESET", mode)
@@ -322,5 +328,53 @@ func TestHealableDivergence(t *testing.T) {
 				t.Errorf("pessimistic: got %v, want %v", pess, tc.wantPess)
 			}
 		})
+	}
+}
+
+// enforceWriteSet's refusal branch cannot be reached through the API, because
+// writeQuorum >= dataBlocks means erasure.Encode and renamePart both fail first.
+// Exercise the predicate directly so the boundary is pinned anyway, and so a
+// change to the threshold is caught by a test rather than by inspection.
+func TestEnforceWriteSetRefusesOnlyBelowDataBlocks(t *testing.T) {
+	var er erasureObjects
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name                          string
+		landed, attempted, dataBlocks int
+		wantRefused                   bool
+	}{
+		{"full write set", 4, 4, 2, false},
+		{"healable shortfall", 3, 4, 2, false},
+		{"exactly at the data-block floor", 2, 4, 2, false},
+		{"one below the floor", 1, 4, 2, true},
+		{"nothing landed", 0, 4, 2, true},
+	} {
+		for _, mode := range []string{"on", "off"} {
+			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				t.Setenv("MINIO_MULTIPART_WRITESET", mode)
+
+				err := er.enforceWriteSet(ctx, "encode", "bucket", "object", 1,
+					nil, nil, tc.landed, tc.attempted, tc.dataBlocks)
+
+				if !tc.wantRefused {
+					if err != nil {
+						t.Fatalf("landed %d of %d with %d data blocks was refused: %v",
+							tc.landed, tc.attempted, tc.dataBlocks, err)
+					}
+					return
+				}
+				if err == nil {
+					t.Fatalf("landed %d of %d with %d data blocks was accepted",
+						tc.landed, tc.attempted, tc.dataBlocks)
+				}
+				// The refusal is unconditional. MINIO_MULTIPART_WRITESET=off is a
+				// rollback lever for the accept-and-heal policy, not a way to admit
+				// a part that cannot be reconstructed.
+				if _, ok := err.(InsufficientWriteQuorum); !ok {
+					t.Fatalf("refusal returned %T (%v), want InsufficientWriteQuorum", err, err)
+				}
+			})
+		}
 	}
 }
