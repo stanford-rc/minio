@@ -5,7 +5,21 @@ linters:
     - durationcheck
     - forcetypeassert
     - gocritic
-    - gomodguard
+    # ELM 2026-09-09. Was "gomodguard", deprecated in golangci-lint v2.12.0.
+    # The rename is safe here only because no gomodguard settings block exists.
+    # The two are NOT config-compatible, and a v1-shaped block under the v2 key
+    # is silently ignored rather than rejected. Verified against v2.13.2: the
+    # same blocked-module rule fired under "gomodguard" and reported nothing
+    # under "gomodguard_v2" until rewritten to the v2 shape.
+    #
+    #   v1:  blocked:              v2:  blocked:
+    #          modules:                   - module: github.com/foo/bar
+    #            - github.com/foo/bar:      reason: "..."
+    #                reason: "..."
+    #
+    # "allowed" changed shape too, and local-replace-directives moved from
+    # under "blocked" to the top level of the settings block.
+    - gomodguard_v2
     - govet
     - ineffassign
     - misspell
