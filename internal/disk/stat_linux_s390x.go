@@ -45,6 +45,11 @@ var fsType2StringMap = map[string]string{
 	"2fc12fc1": "zfs",
 	"ff534d42": "cifs",
 	"53464846": "wslfs",
+	// ELM 2026-09-09. btrfs, magic 0x9123683E, absent upstream. Its omission
+	// made TestFree fail on any host whose temp directory is btrfs, which is
+	// the default on current Fedora and openSUSE. It passes in a container
+	// only because /tmp there is overlayfs, which is in this table.
+	"9123683e": "btrfs",
 }
 
 // getFSType returns the filesystem type of the underlying mounted filesystem
