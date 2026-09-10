@@ -29,7 +29,7 @@ import (
 
 // The rename-site guard: enforceWriteSet called a second time, after renamePart.
 //
-// Unlike erasure-multipart-renamepart_test.go, this file asserts PATCHED behaviour
+// Unlike erasure-multipart-renamepart_test.go, this file asserts PATCHED behavior
 // and is expected to fail on a tree without the guard. That file remains the
 // unpatched-compilable control.
 

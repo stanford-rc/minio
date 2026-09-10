@@ -80,8 +80,7 @@ func setupTestReadDirFiles(t *testing.T) (testResults []result) {
 	for i := range 10 {
 		name := fmt.Sprintf("file-%d", i)
 		if err := os.WriteFile(filepath.Join(dir, name), []byte{}, os.ModePerm); err != nil {
-			// For cleanup, its required to add these entries into test results.
-			testResults = append(testResults, result{dir, entries})
+			// t.TempDir cleans up; t.Fatalf below never returns to the caller.
 			t.Fatalf("Unable to create file, %s", err)
 		}
 		entries = append(entries, name)
@@ -105,8 +104,7 @@ func setupTestReadDirGeneric(t *testing.T) (testResults []result) {
 	for i := range 10 {
 		name := fmt.Sprintf("file-%d", i)
 		if err := os.WriteFile(filepath.Join(dir, "mydir", name), []byte{}, os.ModePerm); err != nil {
-			// For cleanup, its required to add these entries into test results.
-			testResults = append(testResults, result{dir, entries})
+			// t.TempDir cleans up; t.Fatalf below never returns to the caller.
 			t.Fatalf("Unable to write file, %s", err)
 		}
 	}
@@ -130,8 +128,7 @@ func setupTestReadDirSymlink(t *testing.T) (testResults []result) {
 		name1 := fmt.Sprintf("file-%d", i)
 		name2 := fmt.Sprintf("file-%d", i+10)
 		if err := os.WriteFile(filepath.Join(dir, name1), []byte{}, os.ModePerm); err != nil {
-			// For cleanup, its required to add these entries into test results.
-			testResults = append(testResults, result{dir, entries})
+			// t.TempDir cleans up; t.Fatalf below never returns to the caller.
 			t.Fatalf("Unable to create a file, %s", err)
 		}
 		// Symlink will not be added to entries.

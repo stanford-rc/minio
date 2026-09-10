@@ -150,7 +150,7 @@ func countCommittedPartDirs(t *testing.T, fsDirs []string, name string) int {
 // not cover the rename site.
 func TestRenamePartShortfallIsSilent(t *testing.T) {
 	// Pinned to off, for two reasons. It keeps this a statement about the UNGUARDED
-	// behaviour of renamePart, which is what makes it a usable control on an
+	// behavior of renamePart, which is what makes it a usable control on an
 	// unpatched tree where the variable is simply ignored. And once the rename-site
 	// guard exists the default became reject, which would refuse the part and turn
 	// this case into a duplicate of TestRenameGuardShortfallModeMatrix.

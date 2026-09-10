@@ -44,7 +44,7 @@ func TestDanglingDeleteModeParsing(t *testing.T) {
 	}{
 		{"on", danglingDeleteOn},
 		{"off", danglingDeleteOff},
-		// An unrecognised value must fall to the SAFE side.  Falling to "on"
+		// An unrecognized value must fall to the SAFE side.  Falling to "on"
 		// would make a typo in the deployment config destructive.
 		{"yes", danglingDeleteOff},
 		{"true", danglingDeleteOff},
@@ -142,7 +142,7 @@ func TestRefusalReturnsTheExistingQuorumError(t *testing.T) {
 // the four absent ones, so on restore the version survives on four drives only,
 // which is below read quorum: unreadable, and therefore dangling.
 //
-// Measured behaviour, from the run that produced these assertions:
+// Measured behavior, from the run that produced these assertions:
 //
 //	mode=on   PRE 1 version   POST file not found, 0 versions
 //	mode=off  PRE 1 version   POST 1 version
@@ -271,7 +271,7 @@ func TestDanglingGuardEndToEnd(t *testing.T) {
 			case tc.wantDeleted && !deleted:
 				t.Fatal("MINIO_DANGLING_DELETE=on did not delete the dangling " +
 					"version, so the guard is not a pure gate: it changed " +
-					"upstream behaviour rather than only withholding it")
+					"upstream behavior rather than only withholding it")
 			case !tc.wantDeleted && deleted:
 				t.Fatalf("the guard did not hold: heal deleted the dangling "+
 					"version despite MINIO_DANGLING_DELETE=off (%v). On a real "+

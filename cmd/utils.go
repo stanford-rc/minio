@@ -354,7 +354,7 @@ func parseMinPartSize(raw string) (int64, error) {
 	}
 
 	// Below the S3 minimum is refused rather than clamped. Clamping would accept
-	// a value and then not honour it, which is the class of silent divergence
+	// a value and then not honor it, which is the class of silent divergence
 	// this whole declaration exists to end.
 	if int64(n) < int64(s3MinPartSize) {
 		return 0, fmt.Errorf("%s=%q is %d bytes, below the S3 minimum of %d",

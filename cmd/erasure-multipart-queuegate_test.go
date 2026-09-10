@@ -109,7 +109,7 @@ func TestShouldQueueWriteSetHealUntrackedPlacementDoesNotQueue(t *testing.T) {
 
 func TestUnreadableAfterCannotJudgeAnUntrackedPlacement(t *testing.T) {
 	// Why the coupling above has to hold, stated as its own test because it is the
-	// hazard rather than the behaviour.
+	// hazard rather than the behavior.
 	//
 	// unreadableAfter returns nil on an invalid placement, by design: it would
 	// rather skip than be wrong. So if `underReplicated` were ever reported for an

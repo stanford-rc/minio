@@ -500,15 +500,15 @@ func auditDanglingObjectDeletion(ctx context.Context, event, bucket, object, ver
 // inside .minio.sys.  So `off` forgoes roughly one stale config file a quarter
 // and keeps every user object for triage.
 const (
-	danglingDeleteOn  = "on"  // upstream behaviour: act on the verdict
+	danglingDeleteOn  = "on"  // upstream behavior: act on the verdict
 	danglingDeleteOff = "off" // audit the verdict and decline to act
 )
 
 // Deliberately two modes, not three.  An earlier sketch had `off` and `log`
 // differing only so that changing the default would be a config change, but they
 // behave identically: `off` always audits, because the audit record IS the
-// report this exists to preserve.  Two names for one behaviour would be a
-// distinction the code does not honour.
+// report this exists to preserve.  Two names for one behavior would be a
+// distinction the code does not honor.
 func danglingDeleteMode() string {
 	switch v := env.Get("MINIO_DANGLING_DELETE", danglingDeleteOff); v {
 	case danglingDeleteOn, danglingDeleteOff:

@@ -92,7 +92,7 @@ func putPart(ctx context.Context, t *testing.T, obj ObjectLayer, object, uploadI
 // T1.5. Both shapes of healable shortfall are accepted: one where the drive that
 // dropped the write still reports itself online, and one where it is already known
 // bad. The code still separates them into lostHealthy and lostUnhealthy, but as of
-// 2026-09-08 that distinction only labels the log line; it gates no behaviour.
+// 2026-09-08 that distinction only labels the log line; it gates no behavior.
 //
 // COVERAGE NOTE. Under the old reject policy this test asserted a PAIR, with the
 // offline case accepted and the healthy case refused, and that asymmetry was what

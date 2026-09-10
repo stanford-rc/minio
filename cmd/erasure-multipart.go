@@ -579,7 +579,7 @@ func (er erasureObjects) renamePart(ctx context.Context, disks []StorageAPI, src
 //
 // MINIO_MULTIPART_WRITESET=off restores the upstream code path. That is a rollback
 // lever rather than a policy choice, for getting a running cluster back to known
-// behaviour without a rebuild. The unrecoverable case is refused even when off,
+// behavior without a rebuild. The unrecoverable case is refused even when off,
 // which is what upstream's own write quorum is supposed to do anyway.
 func multipartWriteSetEnabled() bool {
 	return !strings.EqualFold(env.Get("MINIO_MULTIPART_WRITESET", "on"), "off")
@@ -675,7 +675,7 @@ func (er erasureObjects) enforceWriteSet(ctx context.Context, stage, bucket, obj
 	// Unrecoverable is refused whether or not enforcement is on: fewer surviving
 	// shards than data blocks cannot be reconstructed from parity, so returning 200
 	// would be a promise the cluster cannot keep. Under EC:1 writeQuorum already
-	// equals DataBlocks so Encode should have failed first; defence in depth.
+	// equals DataBlocks so Encode should have failed first; defense in depth.
 	if landed < dataBlocks {
 		storageLogIf(ctx, fmt.Errorf(
 			"multipart write-set shortfall at %s on %s/%s part %d: landed on %d of %d attempted drives (lost healthy %v, lost unhealthy %v, data blocks %d); UNRECOVERABLE, refusing the part because it could not be reconstructed from parity",
@@ -1989,7 +1989,7 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 		}
 
 		// Cross-check our verdict against MinIO's own before acting on ours. This
-		// changes no behaviour; it exists to measure how often the count-based
+		// changes no behavior; it exists to measure how often the count-based
 		// accept disagrees with the committed-set intersection in production.
 		if opt, pess := healableDivergence(placement, partInfoFiles, committed,
 			fi.Erasure.DataBlocks); len(opt) > 0 || len(pess) > 0 {

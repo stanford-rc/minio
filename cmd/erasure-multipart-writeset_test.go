@@ -247,7 +247,7 @@ func TestMultipartPartWriteSetUnrecoverableAlwaysRefused(t *testing.T) {
 // is refused while a later one in the same window is accepted.
 
 // healableDivergence is the cross-check between MinIO's count-based verdict and
-// ours. It must never change behaviour, so the only thing to test is that it
+// ours. It must never change behavior, so the only thing to test is that it
 // classifies correctly, including the case that motivates it: MinIO says a part is
 // fine while the committed drives cannot reconstruct it.
 func TestHealableDivergence(t *testing.T) {
