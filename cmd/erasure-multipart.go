@@ -1980,6 +1980,60 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 			}
 			return oi, toObjectErr(errErasureWriteQuorum, bucket, object, uploadID)
 		}
+
+		// NAME A COMMIT THAT LANDED ON FEWER DRIVES THAN WERE AVAILABLE TO IT.
+		//
+		// This is the only narrowing site with no voice. PutObjectPart guards its
+		// two, and the readParts divergence check below covers a part that arrived
+		// under-replicated in staging. None of them can see this one, because
+		// readParts reads .minio.sys/multipart and this shortfall is created
+		// downstream of it by renameData. Measured 2026-09-15: a single drive
+		// refusing bucket-side writes produced a 200 to the client, an object on 3
+		// of 4 drives, and NOT ONE line in any log.
+		//
+		// The condition is drives usable at read time and absent from the commit
+		// set. Both masks are indexed by GetDiskLoc, not by slice position, so they
+		// are comparable; see diskBit in readParts for why that distinction is
+		// load-bearing. placement.valid is false when the set is too wide to track,
+		// in which case say nothing rather than something wrong.
+		//
+		// It is deliberately NOT limited to renameData. Any drive that was usable
+		// when the parts were read and did not receive the commit belongs here,
+		// including one that went offline in between for an unrelated reason.
+		// Narrowing the claim to a cause we cannot prove from here would be worse
+		// than reporting what we actually observed.
+		//
+		// LOG ONLY, and deliberately NOT gated on multipartWriteSetEnabled. This
+		// adds no behaviour, so there is nothing for the rollback lever to roll
+		// back, and an operator who sets MINIO_MULTIPART_WRITESET=off is most
+		// likely doing it because enforcement is refusing uploads, which is
+		// exactly when they need to see what the commit set is doing. Always-on
+		// alongside the collapse check above.
+		//
+		// It also deliberately does NOT claim a repair is queued. One is, today,
+		// by the disk == nil hook below, measured by trace as firing about a
+		// second after commit. But that hook only always runs because
+		// RenameDataResp.Sign is always empty, which is a defect. Asserting the
+		// queueing here would make this message's truth depend on that defect
+		// persisting. See cmd/xl-storage-renamedata-sign_test.go, which pins the
+		// defect and explains why repairing it is not a drive-by change.
+		if placement.valid {
+			if missed := placement.usable &^ committed; missed != 0 {
+				var lostDrives []string
+				for _, disk := range er.getDisks() {
+					if disk == nil {
+						continue
+					}
+					if _, _, d := disk.GetDiskLoc(); d >= 0 && d < 64 && missed&(1<<uint(d)) != 0 {
+						lostDrives = append(lostDrives, disk.String())
+					}
+				}
+				storageLogIf(ctx, fmt.Errorf(
+					"multipart commit-set shortfall on %s/%s: committed on %d of %d drives usable at read (usable %#x, committed %#x, missed %#x, drives %v); every part is still readable at %d data blocks so the commit was not refused, but redundancy is reduced",
+					bucket, object, bits.OnesCount64(committed), bits.OnesCount64(placement.usable),
+					placement.usable, committed, missed, lostDrives, fi.Erasure.DataBlocks))
+			}
+		}
 	}
 
 	if err = er.commitRenameDataDir(ctx, bucket, object, oldDataDir, onlineDisks, writeQuorum); err != nil {
