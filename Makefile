@@ -305,3 +305,28 @@ clean: ## cleanup all generated assets
 	@rm -rvf minio-release
 	@rm -rvf minio.RELEASE*.hotfix.*
 	@rm -rvf pkger_*.deb
+
+# ELM 2026-09-15. Pre-flight the release tag.
+#
+# The STANFORD.* tag on master is consumed by the stanford-rc/elm-minio tree to
+# build an image. By then it is too late to discover that a replace pin was
+# never pushed, or that the minio-console tag does not exist, because a tag is
+# the one thing that cannot be corrected afterwards: Go's module proxy and
+# checksum database cache it on first fetch, and re-pointing it breaks every
+# consumer irrecoverably. So the checks run before the tag exists.
+#
+# The logic lives in ~/.local/bin/elm-minio-tag rather than here, alongside
+# elm-console-release and elm-forks-audit which it composes with, so that this
+# fork carries as little Makefile divergence from upstream as possible.
+#
+# NOTE the variable TAG above is upstream's image tag and is unrelated.
+
+tag-check: ## report whether master is ready to tag, create nothing
+	@command -v elm-minio-tag >/dev/null 2>&1 || { \
+	  echo "elm-minio-tag is not on PATH; expected in ~/.local/bin"; exit 1; }
+	@elm-minio-tag --minio $(PWD) --dry-run
+
+tag: ## check master is ready, then create the STANFORD.* tag (does not push)
+	@command -v elm-minio-tag >/dev/null 2>&1 || { \
+	  echo "elm-minio-tag is not on PATH; expected in ~/.local/bin"; exit 1; }
+	@elm-minio-tag --minio $(PWD)
