@@ -598,9 +598,28 @@ func multipartWriteSetEnabled() bool {
 // client retry budget of two or three the upload fails outright. Refusing would
 // convert silent degradation into failed multi-terabyte uploads during exactly the
 // windows when the cluster is already struggling, and rebuilds last 60 to 67 hours.
-// The client mix makes it worse: Globus is 90.48% of PutObjectPart over 90 days,
-// and Globus Support ticket #392783 establishes that a single 503 makes it cancel
-// and DELETE every in-flight upload in the batch, by design, with no retry.
+// The client mix concentrates the cost rather than changing it: Globus is 90.48%
+// of PutObjectPart over 90 days, so whatever Globus does on a 503 is very nearly
+// what a refusal policy does overall.
+//
+// Globus Support ticket #392783, October 2025, reported that one 503 made Globus
+// cancel and DELETE every in-flight upload in the batch, and Globus confirmed it as
+// by design. THAT DOES NOT REPRODUCE. Driven deliberately onto the QoS 503 path on
+// 2026-09-17, the same path the original observation was made on, Globus retried
+// only the failed file and left its siblings alone: it resumed the same uploadId
+// through ListObjectParts where parts existed, and aborted then recreated where
+// none did. A sibling that took its own 503 in the same run was neither aborted nor
+// retried. So a refusal costs that one file a retry, not the run. Either the client
+// changed since the report or the original observation was misread.
+//
+// Globus does ignore our Retry-After: 300, backing off 34s to 85s of its own
+// accord, so that header is not a lever on it.
+//
+// The case for accepting therefore rests on the burst correlation measured above
+// and on that concentration, NOT on catastrophic client behavior: a re-sent part
+// often meets the same clustered fault that refused it, and it does so for 90% of
+// multipart traffic. It is moot for this build in any case, because the refusal
+// branch is unreachable; see enforceWriteSet.
 //
 // An earlier revision tried to have both, refusing while refusals were rare and
 // degrading to accept-and-heal once they clustered, through a sliding-window
@@ -611,10 +630,48 @@ func multipartWriteSetEnabled() bool {
 //
 // What makes accept-and-heal sound is that heal genuinely repairs this shape on the
 // tree this patch targets: upstream 16f8cf1c5, "heal: Include more use case of not
-// healable but readable objects", is an ancestor of 34fbb95aa. It is NOT in
-// RELEASE.2024-08-26, where heal cannot repair a readable-but-incomplete object at
-// all, so a queued repair there is a no-op and this patch MUST NOT be back-ported
-// to that binary without also taking 16f8cf1c5.
+// healable but readable objects", is an ancestor of 34fbb95aa.
+//
+// On RELEASE.2024-08-26 heal repairs this shape CONDITIONALLY, and the condition is
+// worth stating exactly, because "heal does not work there" is wrong and mispredicts
+// the common case. The bail in erasure-healing.go is
+//
+//	disksToHealCount > latestMeta.Erasure.ParityBlocks
+//
+// and disksToHealCount counts DRIVES, incremented once for a drive needing heal for
+// any reason at all, including a drive missing one part.N out of hundreds
+// (shouldHealObjectOnDisk returning errPartMissingOrCorrupt). At EC:1 ParityBlocks
+// is 1, so the whole behavior is:
+//
+//	exactly one drive implicated    1 > 1 false   heal runs, and succeeds
+//	two or more drives implicated   2 > 1 true    heal bails
+//
+// and the bail path does not merely decline. It calls deleteIfDangling and returns
+// errFileNotFound.
+//
+// So the release DOES repair a single-drive shortfall, which is the common shape
+// and is why mc admin heal often works there. It stops the moment a SECOND drive is
+// implicated anywhere in the object, even when every individual part still has
+// three good copies, because the threshold counts drives and not parts. Part count
+// therefore drives the exposure: on a 203-part object, two unrelated single-part
+// losses on two different drives are enough to make a fully readable object
+// un-healable.
+//
+// A second release-only narrowing compounds it. disksWithAllParts nils
+// availableDisks[i] and blanks partsMetadata[i] for a drive with ANY part error,
+// and latestDisks is shuffled from availableDisks, so a drive holding 202 good
+// parts is dropped as a reconstruct source for all 202 of them.
+//
+// 16f8cf1c5 repairs both halves: the bail counts only drives whose xl.meta is
+// missing, corrupt or outdated (xlMetaToHealCount), a real per-part test is added
+// (countPartNotSuccess(partErrs) > ParityBlocks), and reconstruction reads from
+// onlineDisks with a per-part skip, so a drive is excluded only for the parts it
+// actually lost.
+//
+// The back-port rule is unchanged and the reason is now sharper: do NOT put this
+// patch on RELEASE.2024-08-26 without also taking 16f8cf1c5, because there a queued
+// repair is a no-op for precisely the multi-drive cases this patch is most likely
+// to detect.
 
 // enforceWriteSet compares the drives a part was ATTEMPTED on against the drives
 // that still hold it, and applies the configured policy to any shortfall.
@@ -1391,8 +1448,38 @@ func readParts(ctx context.Context, disks []StorageAPI, bucket string, partMetaP
 	// wrong if that is ever exceeded.
 	// diskBit maps a drive to its bit position using its within-set index rather
 	// than its slice position, for the reason given on partPlacement.
+	//
+	// THE TWO BAILOUTS BELOW ARE NOT THE SAME RISK, despite sharing a flag.
+	// The width tests are unreachable in ANY MinIO deployment: setSizes in
+	// cmd/endpoint-ellipses.go caps an erasure set at 16 drives, so neither
+	// len(disks) > 64 nor d >= 64 can hold. They are pure defence against a future
+	// change to that cap. The live test is d < 0, which is not about scale at all:
+	// Endpoint is built with DiskIdx -1 and gets its real index from SetDiskIndex
+	// during layout setup, so a negative index means an endpoint that never went
+	// through layout assignment. That is a malformed layout, and it can happen at
+	// any drive count.
+	//
+	// Either way the consequence is silent. A shift by an out-of-range count yields
+	// 0 rather than panicking, so an untracked drive would read as not holding a
+	// part it does hold, which is a false positive on every check downstream. Hence
+	// skip rather than be wrong.
+	// The set has to be named by a drive rather than by `bucket`: every caller
+	// passes minioMetaMultipartBucket, so bucket is a constant here and would
+	// identify nothing.
 	diskBit := make([]int, len(disks))
 	trackSets := len(disks) <= 64
+	if !trackSets {
+		where := "an unnamed set: every drive in it is nil"
+		for _, disk := range disks {
+			if disk != nil {
+				where = disk.String()
+				break
+			}
+		}
+		storageLogOnceIf(ctx, fmt.Errorf(
+			"multipart write-set tracking DISABLED for the erasure set holding %s: it has %d drives, above the 64-drive bitmask width; the commit-set collapse, commit-set shortfall and write-set divergence checks are all inactive for every object in this set",
+			where, len(disks)), "writeset-placement-width")
+	}
 	for idx := range disks {
 		diskBit[idx] = -1
 		if disks[idx] == nil {
@@ -1400,6 +1487,15 @@ func readParts(ctx context.Context, disks []StorageAPI, bucket string, partMetaP
 		}
 		_, _, d := disks[idx].GetDiskLoc()
 		if d < 0 || d >= 64 {
+			// Report before clearing the flag, so the drive that caused it is named.
+			// Silence here is indistinguishable from "no shortfall found", which is
+			// the wrong thing for a durability check to be ambiguous about.
+			if trackSets {
+				pool, set, _ := disks[idx].GetDiskLoc()
+				storageLogOnceIf(ctx, fmt.Errorf(
+					"multipart write-set tracking DISABLED for pool %d set %d: drive %s reports within-set index %d, outside the trackable range 0..63; a negative index means the endpoint never received a layout assignment. The commit-set collapse, commit-set shortfall and write-set divergence checks are all inactive for every object in this set until this is resolved",
+					pool, set, disks[idx], d), "writeset-placement-diskloc")
+			}
 			trackSets = false // outside bitmask width; skip rather than be wrong
 			continue
 		}
@@ -1952,9 +2048,61 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 	// destination, so the object path resolves to the unreadable version even though
 	// the client is told the commit failed. Reversing that means rewriting xl.meta
 	// back to the prior version across the set, which is outside what this check
-	// does. So a refusal here means: the client knows, the staging shards survive,
+	// does. So a refusal here means: the client knows, some staging shards survive,
 	// and a replaced non-versioned object's old data dir survives. It does not mean
 	// the namespace is unchanged.
+	//
+	// WHICH STAGING SHARDS SURVIVE, measured in the muse lab 2026-09-28 rather than
+	// assumed, because the obvious reading of the line below is wrong. renameData is
+	// a MOVE, so on every drive where it SUCCEEDED the staging copy is already gone.
+	// What survives is the staging copy on the drive or drives where renameData
+	// FAILED, which is a strict minority by construction, and in the single-fault
+	// case is exactly one. Measured shape for one shortfall plus one renameData
+	// failure on a 4-drive EC:1 set:
+	//
+	//	n0  final position   part.1        renameData succeeded
+	//	n1  final position   part.1        renameData succeeded
+	//	n2  STAGING          part.1        renameData failed, staging retained
+	//	n3  final position   (empty)       held the object but never got the part
+	//
+	// So the recoverable set is SPLIT ACROSS THE TWO LOCATIONS and the surviving
+	// staging copy is the difference between three distinct shards and two, which
+	// at EC:1 is the difference between recoverable and lost. Do not read the
+	// message below as "the whole upload is still staged"; it is not, and looking
+	// only in staging finds one shard and reads like total loss.
+	//
+	// TWO THINGS THAT DO NOT WORK, measured on that run, so nobody spends an
+	// incident trying them:
+	//
+	//   - The upload ID is still returned by ListMultipartUploads but is NOT
+	//     resumable. checkUploadIDExists needs readQuorum copies of the upload's
+	//     xl.meta and only the failed drive still has one, so ListParts and
+	//     UploadPart both answer NoSuchUpload. It is a zombie listing.
+	//   - Moving the surviving staging data dir into the object's final path is
+	//     necessary and NOT sufficient on its own. It restores the third shard, but
+	//     that drive has no destination xl.meta, so it is excluded from the read
+	//     set and a GET still fails. mc admin heal at that point reports Grey and
+	//     heals 0/1, correctly: with one drive missing the part and another missing
+	//     xl.meta, countPartNotSuccess exceeds ParityBlocks.
+	//
+	// WHAT DOES WORK is three steps in this order, run end to end on 2026-09-28 and
+	// returning the object to 4 of 4 reading back byte-identical:
+	//
+	//	1. move the staged data dir into the object's final path on the drive
+	//	   renameData failed on.  A rename on that drive; reads nothing from tape
+	//	2. read-elm-object --repair-parts to rebuild any shard that never arrived,
+	//	   then place it.  It reads shards positionally and does NOT need the
+	//	   metadata on the drive whose shard was just restored
+	//	3. mc admin heal, which now goes Red -> Green and rebuilds the missing
+	//	   xl.meta.  It could not do this before step 2
+	//
+	// The ordering is forced rather than preferred: readability needs dataBlocks
+	// drives each holding BOTH the shard and the metadata, so 3 shards and 3
+	// metadata copies spread over 4 drives is still unreadable. Steps 1 and 2 are
+	// outside MinIO. Step 3 is MinIO's and only becomes possible once the object is
+	// readable again. Elm automates the whole sequence: `elm.objects-to-heal.py
+	// check` reports the staged copy and its `heal --repair-with staged,parts,mc`
+	// performs all three.
 	if !opts.Speedtest {
 		var committed uint64
 		for i := range onlineDisks {
@@ -1973,8 +2121,8 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 				}
 			}
 			storageLogIf(ctx, fmt.Errorf(
-				"multipart commit-set collapse on %s/%s: part(s) %v fell below %d data blocks once the commit set narrowed (held %#x, committed %#x, usable at read %#x); failing the commit so the staging shards under %s are retained and the client is told. The destination xl.meta HAS already been written by renameData, so this object path now resolves to the unreadable version; commitRenameDataDir has NOT run, so a replaced version's data dir (old data dir %q, empty when versioned) survives. Recover from the staging shards; do not read this as nothing having happened",
-				bucket, object, nums, fi.Erasure.DataBlocks, placement.held, committed, placement.usable, uploadIDPath, oldDataDir))
+				"multipart commit-set collapse on %s/%s: part(s) %v fell below %d data blocks once the commit set narrowed (held %#x, committed %#x, usable at read %#x); failing the commit and telling the client. The destination xl.meta HAS already been written by renameData, so this object path now resolves to an UNREADABLE version that still LISTs at full size and answers HEAD; only a GET reveals it, so a census built on LIST or HEAD will not see this. commitRenameDataDir has NOT run, so a replaced version's data dir (old data dir %q, empty when versioned) survives. RECOVERY: the surviving shards are SPLIT. renameData is a move, so staging under %s survives only on the drive(s) where it FAILED; the rest are already in the object's final path. Recover in this order: move the staged data dir into the object's final path on that drive, rebuild any still-missing shard from the others, then run heal to restore the missing xl.meta. Heal cannot be the first step, because it declines while the object is unreadable. The upload ID still lists but is NOT resumable (NoSuchUpload). Do not read this as nothing having happened",
+				bucket, object, nums, fi.Erasure.DataBlocks, placement.held, committed, placement.usable, oldDataDir, uploadIDPath))
 			if len(nums) > 0 {
 				return oi, toObjectErr(InvalidPart{PartNumber: nums[0]}, bucket, object, uploadID)
 			}
