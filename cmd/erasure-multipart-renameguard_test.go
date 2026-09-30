@@ -74,6 +74,10 @@ func putSizedPart(ctx context.Context, t *testing.T, obj ObjectLayer, object, up
 func setupMixedFaultTest(ctx context.Context, t *testing.T) (ObjectLayer, *failCreateFileDisk, *failRenamePartDisk, []string) {
 	t.Helper()
 
+	// State the geometry every test on this harness counts drives against.
+	// See setupRenamePartTest.
+	pinParity(t, 4, 2)
+
 	obj, fsDirs, err := prepareErasure(ctx, 4)
 	if err != nil {
 		t.Fatal(err)
@@ -272,7 +276,6 @@ func TestRenameGuardBothFaultsSamePartNeverSucceeds(t *testing.T) {
 // shortfall it accepts.
 func TestRenameGuardFaultsOnDifferentPartsStayIndependent(t *testing.T) {
 	t.Setenv("MINIO_MULTIPART_WRITESET", "off")
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

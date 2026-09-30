@@ -25,51 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/stanford-rc/minio/internal/config/storageclass"
 )
-
-// pinParity forces the erasure geometry a test needs, and verifies it took.
-//
-// ELM 2026-09-09. Setting xl.defaultParityCount is NOT sufficient and fails
-// silently. NewMultipartUpload reads globalStorageClass.GetParityForSC first
-// (cmd/erasure-multipart.go:413) and only falls back to er.defaultParityCount when
-// that returns -1, which it does only while the storage-class config is
-// uninitialized. Any earlier test that initializes the config subsystem leaves it
-// set, and DefaultParityBlocks(4) is 2, so in a full-package run the field
-// assignment is ignored and the object is written at EC:2 instead of EC:1.
-//
-// That is not hypothetical. TestFailCommitWhenPartBecomesUnreadable passed alone
-// and failed in a full run for exactly this reason, and at EC:2 the fault it
-// constructs cannot produce an unreadable part at all, which is the arithmetic
-// TestUnreadableAfterArithmetic asserts. The assertion was sound; the precondition
-// was not being established.
-//
-// The restore is exact in both directions. Update() unconditionally sets the
-// unexported initialized flag, so it cannot express "was never initialized"; for
-// that case the zero struct is assigned directly, which resets the flag because it
-// replaces the whole value rather than calling a method on it.
-func pinParity(t *testing.T, parity int) {
-	t.Helper()
-
-	priorCfg := globalStorageClass
-	priorParity := globalStorageClass.GetParityForSC("")
-
-	globalStorageClass.Update(storageclass.Config{
-		Standard: storageclass.StorageClass{Parity: parity},
-	})
-	if got := globalStorageClass.GetParityForSC(""); got != parity {
-		t.Fatalf("could not pin parity: wanted %d, GetParityForSC reports %d", parity, got)
-	}
-
-	t.Cleanup(func() {
-		if priorParity < 0 {
-			globalStorageClass = storageclass.Config{}
-			return
-		}
-		globalStorageClass.Update(priorCfg)
-	})
-}
 
 // Fail-the-commit: the third response, for the shape that produced Elm's one
 // confirmed permanent loss.
@@ -254,7 +210,7 @@ func TestFailCommitWhenPartBecomesUnreadable(t *testing.T) {
 	// default EC:2 this fault cannot produce an unreadable part at all, which is the
 	// point asserted in TestUnreadableAfterArithmetic.
 	xl.defaultParityCount = 1
-	pinParity(t, 1)
+	pinParity(t, 4, 1)
 
 	// Wrap drive 1 to fail RenameData. Drive 0 is the one whose staged shard is
 	// removed below, so the excluded drive and the short drive differ, which is what
@@ -368,7 +324,7 @@ func TestFailCommitLeavesHealthyCommitAlone(t *testing.T) {
 	z := obj.(*erasureServerPools)
 	xl := z.serverPools[0].sets[0]
 	xl.defaultParityCount = 1
-	pinParity(t, 1)
+	pinParity(t, 4, 1)
 
 	erasureDisks := xl.getDisks()
 	victim := &failRenameDataDisk{StorageAPI: erasureDisks[1]}

@@ -695,6 +695,14 @@ func TestKMSHandlerNotConfiguredOrInvalidCreds(t *testing.T) {
 	adminTestBed, tearDown := setupKMSTest(t, false)
 	defer tearDown()
 
+	// The "not configured" half below requires GlobalKMS to be nil, and the
+	// "invalid credentials" half sets it. Pin both ends: nil going in so the
+	// first half tests what it means to, and the previous value on the way out
+	// so the stub set halfway through does not follow later tests around.
+	prevKMS := GlobalKMS
+	t.Cleanup(func() { GlobalKMS = prevKMS })
+	GlobalKMS = nil
+
 	tests := []struct {
 		name   string
 		method string

@@ -87,6 +87,13 @@ func (d *failRenamePartDisk) IsOnline() bool { return true }
 func setupRenamePartTest(ctx context.Context, t *testing.T, nDown int) (ObjectLayer, []*failRenamePartDisk, []string) {
 	t.Helper()
 
+	// State the geometry every test on this harness counts drives against,
+	// rather than inheriting whatever the storage-class config holds. The
+	// ambient value is DefaultParityBlocks of the drive count belonging to
+	// whichever test last ran newTestConfig or initConfigSubsystem, so a
+	// one-drive setup such as prepareFS leaves EC:0 here.
+	pinParity(t, 4, 2)
+
 	obj, fsDirs, err := prepareErasure(ctx, 4)
 	if err != nil {
 		t.Fatal(err)

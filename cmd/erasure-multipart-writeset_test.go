@@ -65,6 +65,19 @@ func (d *failCreateFileDisk) IsOnline() bool { return true }
 func setupWriteSetTest(ctx context.Context, t *testing.T, nDown int) (ObjectLayer, []*failCreateFileDisk, []string) {
 	t.Helper()
 
+	// Every test on this harness models Elm production, EC:1 on four drives.
+	// Pin it here so a new test inherits the precondition rather than whatever
+	// the storage-class config happens to hold.
+	//
+	// The ambient value is not a fixed number. It is DefaultParityBlocks of
+	// the drive count belonging to whichever test last ran newTestConfig or
+	// initConfigSubsystem. TestValidateAdminSignature builds its layer with
+	// prepareFS, one drive, so it leaves EC:0 behind and every set built
+	// afterwards gets zero parity. That is what broke
+	// TestMultipartPartWriteSetRecoveryIsClean under -shuffle=99, reported as
+	// "Storage resources are insufficient".
+	pinParity(t, 4, 1)
+
 	obj, fsDirs, err := prepareErasure(ctx, 4)
 	if err != nil {
 		t.Fatal(err)

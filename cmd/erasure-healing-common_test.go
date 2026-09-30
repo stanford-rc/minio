@@ -159,6 +159,7 @@ func TestListOnlineDisks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare Erasure backend failed - %v", err)
 	}
+	saveObjectLayer(t)
 	setObjectLayer(obj)
 	defer obj.Shutdown(t.Context())
 	defer removeRoots(disks)
@@ -334,6 +335,7 @@ func TestListOnlineDisksSmallObjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare Erasure backend failed - %v", err)
 	}
+	saveObjectLayer(t)
 	setObjectLayer(obj)
 	defer obj.Shutdown(t.Context())
 	defer removeRoots(disks)
@@ -511,6 +513,7 @@ func TestDisksWithAllParts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare Erasure backend failed - %v", err)
 	}
+	saveObjectLayer(t)
 	setObjectLayer(obj)
 	defer obj.Shutdown(t.Context())
 	defer removeRoots(disks)

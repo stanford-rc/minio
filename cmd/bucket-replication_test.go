@@ -85,6 +85,22 @@ var replicationConfigTests = []struct {
 }
 
 func TestReplicationResync(t *testing.T) {
+	// There is no server here, only a decision table, so say so.
+	//
+	// Resync calls mustReplicate, which returns immediately when
+	// newObjectLayerFn() is nil and otherwise goes on to
+	// BucketVersioningSys.PrefixEnabled. The table's ObjectInfo rows carry no
+	// Bucket, so with a layer installed that asks for the versioning config of
+	// a bucket named "", the lookup fails, and every accessor on
+	// BucketVersioningSys answers a lookup failure with logger.CriticalIf,
+	// which panics the whole test binary and takes every test scheduled after
+	// it down with it.
+	//
+	// Whether a layer is installed depends on what ran earlier. Pinning it to
+	// nil makes the answer the same in every order.
+	saveObjectLayer(t)
+	setObjectLayer(nil)
+
 	ctx := t.Context()
 	for i, test := range replicationConfigTests {
 		if sync := test.rcfg.Resync(ctx, test.info, test.dsc, test.tgtStatuses); sync.mustResync() != test.expectedSync {

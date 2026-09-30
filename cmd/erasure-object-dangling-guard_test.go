@@ -167,20 +167,19 @@ func TestDanglingGuardEndToEnd(t *testing.T) {
 			resetGlobalHealState()
 			defer resetGlobalHealState()
 
-			// Deliberately NOT touching globalStorageClass, unlike
-			// TestHealingDanglingObject which this scenario is borrowed from.
+			// This scenario needs the parity default belonging to the set it
+			// builds. It nils four of sixteen drives and then issues a
+			// DeleteObject, which needs WRITE quorum on the twelve that remain.
+			// DefaultParityBlocks(16) is 4, so data blocks are 12 and twelve
+			// drives exactly meet it.
 			//
-			// That test does `saveSC := globalStorageClass` then restores with
-			// `Update(saveSC)`.  At the start of a run the global is the zero
-			// value, so the deferred restore WRITES a zero config rather than
-			// being a no-op, and a zero config is not equivalent to a never-written
-			// one: it produces "Storage resources are insufficient" in the
-			// multipart tests.  Copying that pattern here made this file a second
-			// leaker and broke TestFailCommitLeavesHealthyCommitAlone.
-			//
-			// Nothing here needs a particular parity.  The scenario only needs a
-			// version written while four of sixteen drives are absent, which is
-			// below read quorum at any sane parity for that geometry.
+			// A storage-class config left initialized by an earlier test
+			// reports DefaultParityBlocks of THAT test's drive count instead,
+			// whatever this set looks like. Two drives, from a four-drive
+			// setup, puts data blocks at 14 and the delete fails with "Storage
+			// resources are insufficient for the write operation" before the
+			// scenario is built.
+			useDefaultParity(t)
 
 			fsDirs, err := getRandomDisks(16)
 			if err != nil {

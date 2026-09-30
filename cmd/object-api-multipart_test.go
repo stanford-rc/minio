@@ -1208,6 +1208,9 @@ func TestListObjectPartsStale(t *testing.T) {
 
 // testListObjectPartsStale - Tests validate listing of object parts when parts are stale
 func testListObjectPartsStale(obj ObjectLayer, instanceType string, disks []string, t *testing.T) {
+	// Changes globalStorageClass below; put it back.
+	saveStorageClass(t)
+
 	bucketNames := []string{"minio-bucket", "minio-2-bucket"}
 	objectNames := []string{"minio-object-1.txt"}
 	uploadIDs := []string{}
@@ -1516,6 +1519,9 @@ func TestListObjectPartsDiskNotFound(t *testing.T) {
 
 // testListObjectParts - Tests validate listing of object parts when disks go offline.
 func testListObjectPartsDiskNotFound(obj ObjectLayer, instanceType string, disks []string, t *testing.T) {
+	// Changes globalStorageClass below; put it back.
+	saveStorageClass(t)
+
 	bucketNames := []string{"minio-bucket", "minio-2-bucket"}
 	objectNames := []string{"minio-object-1.txt"}
 	uploadIDs := []string{}

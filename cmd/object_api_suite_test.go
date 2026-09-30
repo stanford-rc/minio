@@ -595,6 +595,25 @@ func resetCompressEncryption() {
 }
 
 func execExtended(t *testing.T, fn func(t *testing.T, init func(), bucketOptions MakeBucketOptions)) {
+	// Put back what the subtests below change. Each one calls
+	// resetCompressEncryption then enables compression or encryption, so the
+	// last one to run leaves GlobalKMS set, globalAutoEncryption true and
+	// compression on for every test that follows in this binary.
+	// resetCompressEncryption is not a substitute: it resets to a fixed
+	// baseline rather than to whatever was here on entry.
+	globalCompressConfigMu.Lock()
+	prevCompress := globalCompressConfig
+	globalCompressConfigMu.Unlock()
+	prevAutoEncryption := globalAutoEncryption
+	prevKMS := GlobalKMS
+	t.Cleanup(func() {
+		globalCompressConfigMu.Lock()
+		globalCompressConfig = prevCompress
+		globalCompressConfigMu.Unlock()
+		globalAutoEncryption = prevAutoEncryption
+		GlobalKMS = prevKMS
+	})
+
 	// Exec with default settings...
 	resetCompressEncryption()
 	t.Run("default", func(t *testing.T) {

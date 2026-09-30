@@ -65,6 +65,7 @@ import (
 	"github.com/stanford-rc/minio/internal/auth"
 	"github.com/stanford-rc/minio/internal/bpool"
 	"github.com/stanford-rc/minio/internal/config"
+	"github.com/stanford-rc/minio/internal/config/storageclass"
 	"github.com/stanford-rc/minio/internal/crypto"
 	"github.com/stanford-rc/minio/internal/hash"
 	"github.com/stanford-rc/minio/internal/logger"
@@ -543,6 +544,131 @@ func resetGlobalEndpoints() {
 
 func resetGlobalIsErasure() {
 	globalIsErasure = false
+}
+
+// saveStorageClass snapshots globalStorageClass and restores it exactly when
+// the test ends. Call it once, at the top of any test that changes the storage
+// class, then change it however you like.
+//
+// Restore by assignment, never through Update(). Update() ends with
+// `sCfg.initialized = true` unconditionally, so it cannot express "was never
+// initialized". In a fresh test binary nothing has configured a storage class,
+// so the saved value is the zero Config: Standard.Parity 0, initialized false.
+// Putting that back through Update leaves Parity 0 and flips initialized to
+// true, which inverts the meaning of the field. GetParityForSC returns -1 while
+// uninitialized, telling the caller to choose a default for the set it built,
+// and returns Standard.Parity once initialized. After a restore through Update
+// it returns 0, so every object built later in the same process gets zero
+// parity. The failures surface far away as "Specified part could not be found"
+// or "Storage resources are insufficient", neither of which names parity, and
+// every affected test passes when run alone.
+//
+// ConfigLock guards these fields against the object layers' background
+// goroutines, which read them through GetParityForSC.
+func saveStorageClass(t testing.TB) {
+	t.Helper()
+	storageclass.ConfigLock.RLock()
+	saved := globalStorageClass
+	storageclass.ConfigLock.RUnlock()
+	t.Cleanup(func() {
+		storageclass.ConfigLock.Lock()
+		globalStorageClass = saved
+		storageclass.ConfigLock.Unlock()
+	})
+}
+
+// saveObjectLayer restores globalObjectAPI when the test ends. Call it before
+// setObjectLayer in any test that installs its own layer.
+//
+// Installing a layer and leaving it is a leak with teeth, because these tests
+// pair it with `defer removeRoots(...)`: the global then points at a layer
+// whose backing directories have been deleted, and every later test that
+// consults it fails with "Storage resources are insufficient for the write
+// operation" or a metadata lookup error. Neither names the cause and every
+// victim passes when run alone.
+func saveObjectLayer(t testing.TB) {
+	t.Helper()
+	prev := newObjectLayerFn()
+	t.Cleanup(func() { setObjectLayer(prev) })
+}
+
+// useDefaultParity makes a test use the erasure geometry derived from its OWN
+// drive count, and restores the previous storage-class config when it ends.
+//
+// GetParityForSC returns -1 while the storage-class config is uninitialized,
+// which tells the caller to pick a default from the set it actually built. Any
+// earlier test that runs newTestConfig or initConfigSubsystem leaves the config
+// initialized at DefaultParityBlocks(n) for ITS layer's drive count, and from
+// then on every caller is told that number whatever its own geometry. The
+// damaging case is a single-drive setup such as prepareFS, where n is 1 and the
+// answer is 0: zero parity for every set built afterwards.
+//
+// This is the counterpart to pinParity. pinParity when a test needs one
+// specific geometry, useDefaultParity when it needs the natural default for its
+// own set. Either way the precondition is stated rather than inherited, so
+// inserting a new test earlier in the package cannot change the answer.
+func useDefaultParity(t testing.TB) {
+	t.Helper()
+	saveStorageClass(t)
+	storageclass.ConfigLock.Lock()
+	globalStorageClass = storageclass.Config{}
+	storageclass.ConfigLock.Unlock()
+}
+
+// pinParity forces the erasure geometry a test needs, and verifies it took.
+// driveCount is the set size the test builds; parity is the EC:N it wants.
+// saveStorageClass restores the previous config when the test ends.
+//
+// Setting xl.defaultParityCount is not sufficient and fails silently.
+// NewMultipartUpload reads globalStorageClass.GetParityForSC first
+// (cmd/erasure-multipart.go:413) and falls back to er.defaultParityCount only
+// when that returns -1, which happens only while the storage-class config is
+// uninitialized. Any earlier test that runs newTestConfig or
+// initConfigSubsystem leaves it initialized at DefaultParityBlocks(n) for that
+// test's own drive count, and from then on the field assignment is ignored and
+// the object is written at whatever n implied.
+//
+// driveCount is not redundant with parity. LookupConfig is the only way to
+// build a Config with the right defaults from outside package storageclass:
+// it validates the parity against the set size, derives the RRS default from
+// it, and supplies the 128 KiB inline block. A hand-built
+// storageclass.Config{Standard: ...} leaves inlineBlock at 0, and Update
+// copies that, so ShouldInline then answers false for every non-empty shard
+// and small objects silently take the non-inline path.
+// THE GEOMETRY HAS TWO HALVES AND THIS PINS BOTH.
+// globalStorageClass is what GetParityForSC answers from. er.defaultParityCount
+// is a separate field, fixed when the layer is built from
+// ecDrivesNoConfig(setDriveCount), and still consulted for delete-marker
+// quorum, healObjectDir and objectQuorumFromMeta. Updating only the global
+// leaves a layer whose two numbers disagree.
+//
+// ecDrivesNoConfig reads MINIO_STORAGE_CLASS_STANDARD, so setting it here
+// covers the second half, provided this is called BEFORE the layer is built.
+// It also means a later newTestConfig or initConfigSubsystem in the same test
+// keeps the pin rather than overwriting it, because LookupConfig reads the
+// environment ahead of the KVS. t.Setenv undoes itself when the test ends.
+//
+// Call sites that pin AFTER building their layer get only the global half and
+// must set er.defaultParityCount themselves; erasure-multipart-failcommit_test.go
+// does exactly that.
+func pinParity(t *testing.T, driveCount, parity int) {
+	t.Helper()
+
+	saveStorageClass(t)
+	t.Setenv(storageclass.StandardEnv, fmt.Sprintf("EC:%d", parity))
+
+	cfg, err := storageclass.LookupConfig(config.KVS{{
+		Key:   storageclass.ClassStandard,
+		Value: fmt.Sprintf("EC:%d", parity),
+	}}, driveCount)
+	if err != nil {
+		t.Fatalf("could not pin EC:%d on %d drives: %v", parity, driveCount, err)
+	}
+
+	globalStorageClass.Update(cfg)
+	if got := globalStorageClass.GetParityForSC(""); got != parity {
+		t.Fatalf("could not pin parity: wanted %d, GetParityForSC reports %d", parity, got)
+	}
 }
 
 // reset global heal state

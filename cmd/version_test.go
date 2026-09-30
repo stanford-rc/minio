@@ -23,6 +23,14 @@ import (
 )
 
 func TestVersion(t *testing.T) {
+	// Version is a package-level global that getUserAgent reports and that
+	// IsSourceBuild keys off. Leaving the assignment below in place changes the
+	// user-agent string for every later test in the binary: the version differs
+	// and the "; source" marker disappears. TestUserAgent is the one that
+	// notices.
+	saved := Version
+	t.Cleanup(func() { Version = saved })
+
 	Version = "2017-05-07T06:37:49Z"
 	_, err := time.Parse(time.RFC3339, Version)
 	if err != nil {

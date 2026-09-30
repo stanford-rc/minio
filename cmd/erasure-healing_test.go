@@ -27,13 +27,13 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/dustin/go-humanize"
 	uuid2 "github.com/google/uuid"
 	"github.com/minio/madmin-go/v3"
-	"github.com/stanford-rc/minio/internal/config/storageclass"
 )
 
 // Tests isObjectDangling function
@@ -657,16 +657,8 @@ func TestHealingDanglingObject(t *testing.T) {
 	resetGlobalHealState()
 	defer resetGlobalHealState()
 
-	// Set globalStorageClass.STANDARD to EC:4 for this test
-	saveSC := globalStorageClass
-	defer func() {
-		globalStorageClass.Update(saveSC)
-	}()
-	globalStorageClass.Update(storageclass.Config{
-		Standard: storageclass.StorageClass{
-			Parity: 4,
-		},
-	})
+	// This test builds a 16-drive set and needs EC:4 on it.
+	pinParity(t, 16, 4)
 
 	nDisks := 16
 	fsDirs, err := getRandomDisks(nDisks)
@@ -682,6 +674,10 @@ func TestHealingDanglingObject(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The layer installed below must come back out. `defer removeRoots(fsDirs)`
+	// deletes its backing directories, so leaving it in globalObjectAPI hands
+	// every later test a layer whose disks are gone.
+	saveObjectLayer(t)
 	setObjectLayer(objLayer)
 
 	bucket := getRandomBucketName()
@@ -986,6 +982,11 @@ func TestHealCorrectQuorum(t *testing.T) {
 }
 
 func TestHealObjectCorruptedPools(t *testing.T) {
+	// Two pools of 16 drives, so each SET is 16 and the default for this
+	// layer is DefaultParityBlocks(16). Take that rather than whatever an
+	// earlier test left in the storage-class config. See useDefaultParity.
+	useDefaultParity(t)
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -1174,6 +1175,10 @@ func TestHealObjectCorruptedPools(t *testing.T) {
 }
 
 func TestHealObjectCorruptedXLMeta(t *testing.T) {
+	// 16-drive set: take the default for that, not whatever an earlier test
+	// left in the storage-class config. See useDefaultParity.
+	useDefaultParity(t)
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -1313,6 +1318,10 @@ func TestHealObjectCorruptedXLMeta(t *testing.T) {
 }
 
 func TestHealObjectCorruptedParts(t *testing.T) {
+	// 16-drive set: take the default for that, not whatever an earlier test
+	// left in the storage-class config. See useDefaultParity.
+	useDefaultParity(t)
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -1473,6 +1482,10 @@ func TestHealObjectCorruptedParts(t *testing.T) {
 
 // Tests healing of object.
 func TestHealObjectErasure(t *testing.T) {
+	// 16-drive set: take the default for that, not whatever an earlier test
+	// left in the storage-class config. See useDefaultParity.
+	useDefaultParity(t)
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -1489,6 +1502,11 @@ func TestHealObjectErasure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Stop the layer's background routines. newErasureServerPools starts
+	// initAutoHeal against GlobalContext, so they survive `defer cancel()` and
+	// go on holding this layer after the test returns.
+	t.Cleanup(func() { obj.Shutdown(GlobalContext) })
 
 	bucket := "bucket"
 	object := "object"
@@ -1547,27 +1565,69 @@ func TestHealObjectErasure(t *testing.T) {
 		t.Errorf("Expected xl.meta file to be present but stat failed - %v", err)
 	}
 
+	// Override er.getDisks to strip write quorum, and put it back afterwards.
+	//
+	// The override has to come off before the test ends. newErasureServerPools
+	// runs initAutoHeal with GlobalContext rather than this test's ctx, so the
+	// background heal and MRF routines keep a reference to this layer and
+	// outlive `defer cancel()`. If one of them calls getDisks after the test
+	// has finished, the closure deletes the object again and calls t.Fatalf on
+	// a completed T, which panics the whole binary with "Fail in goroutine
+	// after TestHealObjectErasure has completed" and names this test rather
+	// than whatever was running at the time.
+	//
+	// The t.Cleanup below removes the closure. The Shutdown cleanup above stops
+	// the routines that could call it. Either alone would do; both together
+	// mean the order of the two does not matter.
+	//
+	// HealObject itself calls getDisks synchronously, so t.Fatalf inside the
+	// closure is legal for the duration of the test. Recording the error
+	// instead keeps it legal after the test as well.
 	erasureDisks := er.getDisks()
+	var deleteErr error
+	var deleteErrMu sync.Mutex
+
 	z.serverPools[0].erasureDisksMu.Lock()
+	origGetDisks := er.getDisks
 	er.getDisks = func() []StorageAPI {
 		// Nil more than half the disks, to remove write quorum.
 		for i := 0; i <= len(erasureDisks)/2; i++ {
-			err := erasureDisks[i].Delete(t.Context(), bucket, object, DeleteOptions{
+			err := erasureDisks[i].Delete(GlobalContext, bucket, object, DeleteOptions{
 				Recursive: true,
 				Immediate: false,
 			})
 			if err != nil {
-				t.Fatalf("Failed to delete a file - %v", err)
+				deleteErrMu.Lock()
+				if deleteErr == nil {
+					deleteErr = err
+				}
+				deleteErrMu.Unlock()
 			}
 		}
 		return erasureDisks
 	}
 	z.serverPools[0].erasureDisksMu.Unlock()
+	t.Cleanup(func() {
+		z.serverPools[0].erasureDisksMu.Lock()
+		er.getDisks = origGetDisks
+		z.serverPools[0].erasureDisksMu.Unlock()
+	})
 
 	// Try healing now, expect to receive errDiskNotFound.
 	_, err = obj.HealObject(ctx, bucket, object, "", madmin.HealOpts{
 		ScanMode: madmin.HealDeepScan,
 	})
+
+	// Check the closure's delete first. A failed delete leaves write quorum
+	// intact, so HealObject then returns something other than not-found and the
+	// assertion below reports that instead, hiding the real cause.
+	deleteErrMu.Lock()
+	failed := deleteErr
+	deleteErrMu.Unlock()
+	if failed != nil {
+		t.Fatalf("Failed to delete a file - %v", failed)
+	}
+
 	// since majority of xl.meta's are not available, object quorum
 	// can't be read properly will be deleted automatically and
 	// err is nil
@@ -1578,6 +1638,10 @@ func TestHealObjectErasure(t *testing.T) {
 
 // Tests healing of empty directories
 func TestHealEmptyDirectoryErasure(t *testing.T) {
+	// 16-drive set: take the default for that, not whatever an earlier test
+	// left in the storage-class config. See useDefaultParity.
+	useDefaultParity(t)
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -1658,6 +1722,11 @@ func TestHealEmptyDirectoryErasure(t *testing.T) {
 }
 
 func TestHealLastDataShard(t *testing.T) {
+	// Each case builds its own 16-drive set: take the default for that, not
+	// whatever an earlier test left in the storage-class config. See
+	// useDefaultParity.
+	useDefaultParity(t)
+
 	tests := []struct {
 		name     string
 		dataSize int64

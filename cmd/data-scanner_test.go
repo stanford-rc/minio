@@ -42,6 +42,7 @@ func TestApplyNewerNoncurrentVersionsLimit(t *testing.T) {
 		t.Fatalf("Failed to initialize object layer: %v", err)
 	}
 	defer removeRoots(disks)
+	saveObjectLayer(t)
 	setObjectLayer(objAPI)
 
 	// Prepare bucket metadata

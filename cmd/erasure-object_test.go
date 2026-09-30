@@ -287,7 +287,12 @@ func TestErasureDeleteObjectsErasureSet(t *testing.T) {
 		t.Fatal("Unable to initialize 'Erasure' object layer.", err)
 	}
 
+	saveObjectLayer(t)
 	setObjectLayer(obj)
+
+	// initConfigSubsystem rewrites globalStorageClass from this layer's drive
+	// count and leaves it there.
+	saveStorageClass(t)
 	initConfigSubsystem(ctx, obj)
 
 	// Remove all dirs.
@@ -481,6 +486,10 @@ func TestErasureDeleteObjectDiskNotFoundErasure4(t *testing.T) {
 }
 
 func TestErasureDeleteObjectDiskNotFoundErr(t *testing.T) {
+	// 16-drive set: take the default for that, not whatever an earlier test
+	// left in the storage-class config. See useDefaultParity.
+	useDefaultParity(t)
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -552,6 +561,10 @@ func TestErasureDeleteObjectDiskNotFoundErr(t *testing.T) {
 }
 
 func TestGetObjectNoQuorum(t *testing.T) {
+	// 16-drive set: take the default for that, not whatever an earlier test
+	// left in the storage-class config. See useDefaultParity.
+	useDefaultParity(t)
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -941,6 +954,9 @@ func TestObjectQuorumFromMeta(t *testing.T) {
 }
 
 func testObjectQuorumFromMeta(obj ObjectLayer, instanceType string, dirs []string, t TestErrHandler) {
+	// This function changes globalStorageClass six times; put it back.
+	saveStorageClass(t)
+
 	bucket := getRandomBucketName()
 
 	var opts ObjectOptions
