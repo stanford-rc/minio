@@ -178,9 +178,9 @@ func benchmarkPutObjectParallel(b *testing.B, instanceType string, objSize int) 
 // randomly picks a character and returns its equivalent byte array.
 func getRandomByte() []byte {
 	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	// seeding the random number generator.
-	rand.Seed(UTCNow().UnixNano())
-	// pick a character randomly.
+	// Pick a character randomly. The global source is seeded randomly at
+	// program startup and needs no reseeding here, and rand.Seed is a no-op
+	// from Go 1.24 onward in any case.
 	return []byte{letterBytes[rand.Intn(len(letterBytes))]}
 }
 

@@ -2473,14 +2473,23 @@ func getRandomRange(minN, maxN int, seed int64) int {
 // Randomizes the order of bytes in the byte array
 // using Knuth Fisher-Yates shuffle algorithm.
 func randomizeBytes(s []byte, seed int64) []byte {
+	// The source is local, matching getRandomRange above. Seeding the global
+	// source cannot deliver the reproducibility an explicit seed asks for,
+	// because rand.Seed is a no-op from Go 1.24 onward and GODEBUG defaults
+	// follow the `go` directive in go.mod. Drawing from the global source would
+	// also consume a process-global shared with every other test in the binary.
+	//
 	// special value -1 means no explicit seeding.
+	src := rand.NewSource(time.Now().UnixNano())
 	if seed != -1 {
-		rand.Seed(seed)
+		src = rand.NewSource(seed)
 	}
+	r := rand.New(src)
+
 	n := len(s)
 	var j int
 	for i := 0; i < n-1; i++ {
-		j = i + rand.Intn(n-i)
+		j = i + r.Intn(n-i)
 		s[i], s[j] = s[j], s[i]
 	}
 	return s

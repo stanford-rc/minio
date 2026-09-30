@@ -180,12 +180,21 @@ func testDynamicTimeoutAdjust(t *testing.T, timeout *dynamicTimeout, f func() fl
 func TestDynamicTimeoutAdjustExponential(t *testing.T) {
 	timeout := newDynamicTimeout(time.Minute, time.Second)
 
-	rand.Seed(0)
+	// Draw from a local source with a fixed seed, not the global one.
+	//
+	// rand.Seed is a no-op from Go 1.24 onward, and GODEBUG defaults follow the
+	// `go` directive in go.mod, so seeding the global source here pins nothing.
+	// The draws below decide how many rounds log a failure rather than a
+	// success, which is what the assertion turns on, so an unseeded source
+	// makes this test fail a few times in every few hundred runs. Seeding a
+	// local *rand.Rand restores determinism and stops the test mutating a
+	// process-global shared with every other test in the binary.
+	r := rand.New(rand.NewSource(0))
 
 	initial := timeout.Timeout()
 
 	for range 10 {
-		testDynamicTimeoutAdjust(t, timeout, rand.ExpFloat64)
+		testDynamicTimeoutAdjust(t, timeout, r.ExpFloat64)
 	}
 
 	adjusted := timeout.Timeout()
@@ -197,13 +206,15 @@ func TestDynamicTimeoutAdjustExponential(t *testing.T) {
 func TestDynamicTimeoutAdjustNormalized(t *testing.T) {
 	timeout := newDynamicTimeout(time.Minute, time.Second)
 
-	rand.Seed(0)
+	// Local seeded source. See TestDynamicTimeoutAdjustExponential for why the
+	// global one cannot be seeded any more.
+	r := rand.New(rand.NewSource(0))
 
 	initial := timeout.Timeout()
 
 	for range 10 {
 		testDynamicTimeoutAdjust(t, timeout, func() float64 {
-			return 1.0 + rand.NormFloat64()
+			return 1.0 + r.NormFloat64()
 		})
 	}
 
