@@ -455,6 +455,15 @@ func (j *xlMetaV2Version) ToFileInfo(volume, path string, allParts bool) (fi Fil
 const (
 	xlHeaderVersion = 3
 	xlMetaVersion   = 2
+
+	// xlMetaVersionReadMax is the newest meta version this release reads.
+	// Version 3, from upstream b9196757f (#20846), has the same layout as
+	// version 2: the bump only marks files written after a compression-index
+	// fix, so readers can skip a repair scan. Reading it lets this release run
+	// against drives a newer release has written. Writes stay at
+	// xlMetaVersion, so a newer release still runs that repair on anything
+	// written here.
+	xlMetaVersionReadMax = 3
 )
 
 func (j xlMetaV2DeleteMarker) ToFileInfo(volume, path string) (FileInfo, error) {
@@ -820,7 +829,7 @@ func decodeXLHeaders(buf []byte) (versions int, headerV, metaV uint8, b []byte, 
 	if hdrVer > xlHeaderVersion {
 		return 0, 0, 0, buf, fmt.Errorf("decodeXLHeaders: Unknown xl header version %d", metaVer)
 	}
-	if metaVer > xlMetaVersion {
+	if metaVer > xlMetaVersionReadMax {
 		return 0, 0, 0, buf, fmt.Errorf("decodeXLHeaders: Unknown xl meta version %d", metaVer)
 	}
 	versions, buf, err = msgp.ReadIntBytes(buf)

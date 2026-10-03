@@ -84,7 +84,7 @@ func (x *xlMetaV2VersionHeader) unmarshalV1(bts []byte) (o []byte, err error) {
 
 // unmarshalV unmarshals with a specific metadata version.
 func (j *xlMetaV2Version) unmarshalV(v uint8, bts []byte) (o []byte, err error) {
-	if v > xlMetaVersion {
+	if v > xlMetaVersionReadMax {
 		return bts, fmt.Errorf("unknown xlMetaVersion: %d", v)
 	}
 
