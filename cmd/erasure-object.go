@@ -1503,6 +1503,23 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 		writers[i] = newBitrotWriter(disk, bucket, minioMetaTmpBucket, tempErasureObj, shardFileSize, DefaultBitrotAlgorithm, erasure.ShardSize())
 	}
 
+	// The drives this PUT writes to, kept because the entries of onlineDisks
+	// are nil'd as writes fail, and the health of a drive that failed decides
+	// how its loss is reported.  A drive left out here was already unavailable;
+	// that is logged once per erasure set, not as a shortfall.
+	inline := len(inlineBuffers) > 0
+	attemptedDisks := make([]StorageAPI, len(onlineDisks))
+	attempted := 0
+	for i := range writers {
+		if writers[i] != nil {
+			attemptedDisks[i] = onlineDisks[i]
+			attempted++
+		}
+	}
+	if !opts.Speedtest {
+		er.logWrittenAround(ctx, onlineDisks, attemptedDisks, userDefined[minIOErasureUpgraded])
+	}
+
 	toEncode := io.Reader(data)
 	if data.Size() >= bigFileThreshold {
 		// We use 2 buffers, so we always have a full buffer of input.
@@ -1579,11 +1596,23 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 			fi.Checksum = opts.EncryptFn("object-checksum", fi.Checksum)
 		}
 	}
+	// A writer that failed its CLOSE is lost too.  multiWriter only nils
+	// writers that failed a Write (cmd/erasure-encode.go), so a drive whose
+	// CreateFile failed while bytes were still buffered arrives here non-nil,
+	// and keeping it would hand renameData a short shard.  This runs even if
+	// MINIO_MULTIPART_WRITESET=off, since that drive's RenameData would fail
+	// anyway.  Close reports the ring buffer's error, and a CreateFile that
+	// fails after the buffer has drained may or may not reach it, so such a
+	// drive is caught either here or at the commit check.
+	// reduceWriteQuorumErrs above has already returned unless writeQuorum of
+	// closeErrs are nil, so dropping these cannot take the set below quorum.
+	landed := 0
 	for i, w := range writers {
-		if w == nil {
+		if w == nil || closeErrs[i] != nil {
 			onlineDisks[i] = nil
 			continue
 		}
+		landed++
 		if len(inlineBuffers) > 0 && inlineBuffers[i] != nil {
 			partsMetadata[i].Data = inlineBuffers[i].Bytes()
 		} else {
@@ -1593,6 +1622,16 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 		partsMetadata[i].AddObjectPart(1, "", n, actualSize, modTime, compIndex, nil)
 		partsMetadata[i].Versioned = opts.Versioned || opts.VersionSuspended
 		partsMetadata[i].Checksum = fi.Checksum
+	}
+
+	// Inline data is encoded into memory buffers, which do not fail, so only a
+	// regular PUT can lose a drive here.
+	op := writeSetOp{singlePut: true, inline: inline}
+	if !opts.Speedtest {
+		if err := er.checkWriteSet(ctx, "encode", bucket, object, op,
+			attemptedDisks, onlineDisks, landed, attempted, fi.Erasure.DataBlocks); err != nil {
+			return ObjectInfo{}, err
+		}
 	}
 
 	userDefined["etag"] = r.MD5CurrentHexString()
@@ -1641,6 +1680,22 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 		defer lk.Unlock(lkctx)
 	}
 
+	// The drives that hold the shard going into the commit.  renameData
+	// returns a new list in which each drive whose commit failed is nil, and
+	// onlineDisks is replaced by that list.  Once writeQuorum drives succeed,
+	// renameData discards the errors of the rest.  This copy is the only
+	// record of which drives were tried.
+	//
+	// The commit is the only point at which an inline object can lose a copy.
+	commitAttempted := make([]StorageAPI, len(onlineDisks))
+	copy(commitAttempted, onlineDisks)
+	commitAttemptedCount := 0
+	for i := range commitAttempted {
+		if commitAttempted[i] != nil {
+			commitAttemptedCount++
+		}
+	}
+
 	// Rename the successfully written temporary object to final location.
 	onlineDisks, versions, oldDataDir, err := renameData(ctx, onlineDisks, minioMetaTmpBucket, tempObj, partsMetadata, bucket, object, writeQuorum)
 	if err != nil {
@@ -1653,6 +1708,20 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 			return ObjectInfo{}, IncompleteBody{Bucket: bucket, Object: object}
 		}
 		return ObjectInfo{}, toObjectErr(err, bucket, object)
+	}
+
+	if !opts.Speedtest {
+		committed := 0
+		for i := range onlineDisks {
+			if onlineDisks[i] != nil {
+				committed++
+			}
+		}
+		// Log only.  The object exists now, so a refusal could not undo it,
+		// and the unrecoverable branch is unreachable: renameData returns nil
+		// only after writeQuorum commits, and writeQuorum >= dataBlocks.
+		_ = er.checkWriteSet(ctx, "commit", bucket, object, op,
+			commitAttempted, onlineDisks, committed, commitAttemptedCount, fi.Erasure.DataBlocks)
 	}
 
 	if err = er.commitRenameDataDir(ctx, bucket, object, oldDataDir, onlineDisks, writeQuorum); err != nil {
@@ -1681,11 +1750,16 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 					continue
 				}
 
-				er.addPartial(bucket, object, fi.VersionID)
+				putObjectQueueHeal(PartialOperation{
+					Bucket:    bucket,
+					Object:    object,
+					VersionID: fi.VersionID,
+					Queued:    time.Now(),
+				})
 				break
 			}
 		} else {
-			globalMRFState.addPartialOp(PartialOperation{
+			putObjectQueueHeal(PartialOperation{
 				Bucket:    bucket,
 				Object:    object,
 				Queued:    time.Now(),

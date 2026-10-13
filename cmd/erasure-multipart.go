@@ -705,6 +705,52 @@ func multipartWriteSetEnabled() bool {
 func (er erasureObjects) enforceWriteSet(ctx context.Context, stage, bucket, object string, partID int,
 	attemptedDisks, survivors []StorageAPI, landed, attempted, dataBlocks int,
 ) error {
+	return er.checkWriteSet(ctx, stage, bucket, object, writeSetOp{part: partID},
+		attemptedDisks, survivors, landed, attempted, dataBlocks)
+}
+
+// writeSetOp says which write a write-set check is about, so its log line can
+// name it.  A multipart part sets part and leaves singlePut false.  A whole
+// object written by one PutObject sets singlePut, and leaves part zero.
+type writeSetOp struct {
+	part      int
+	singlePut bool
+	inline    bool // a single-part PUT whose data is stored inside xl.meta
+}
+
+// subject is the opening of a write-set log line, naming the stage and the
+// write.  The multipart form is fixed, because Splunk searches and alerts match
+// on it.  bucket and object are never used as a format string: an S3 key may
+// contain '%'.
+func (op writeSetOp) subject(stage, bucket, object string) string {
+	if !op.singlePut {
+		return fmt.Sprintf("multipart write-set shortfall at %s on %s/%s part %d", stage, bucket, object, op.part)
+	}
+	if op.inline {
+		return fmt.Sprintf("single-part PUT write-set shortfall at %s on %s/%s (inline)", stage, bucket, object)
+	}
+	return fmt.Sprintf("single-part PUT write-set shortfall at %s on %s/%s", stage, bucket, object)
+}
+
+// healNote says what repairs an accepted shortfall.  A multipart part is
+// repaired by the commit boundary; a single-part PUT is queued for MRF heal by
+// putObject itself, right after the commit, for every drive missing from it.
+func (op writeSetOp) healNote() string {
+	if op.singlePut {
+		return "healable, accepted, heal queued at commit"
+	}
+	return "healable, accepted, commit-boundary detection will queue the heal"
+}
+
+// writeSetLogIf is where write-set findings are logged.  A variable so tests
+// can capture the lines; it is storageLogIf in every build.
+var writeSetLogIf = storageLogIf
+
+// checkWriteSet is enforceWriteSet for any write: a multipart part, or a
+// single-part PUT.  See enforceWriteSet for the policy.
+func (er erasureObjects) checkWriteSet(ctx context.Context, stage, bucket, object string, op writeSetOp,
+	attemptedDisks, survivors []StorageAPI, landed, attempted, dataBlocks int,
+) error {
 	if landed >= attempted {
 		return nil
 	}
@@ -745,10 +791,15 @@ func (er erasureObjects) enforceWriteSet(ctx context.Context, stage, bucket, obj
 	// TestEnforceWriteSetRefusesOnlyBelowDataBlocks rather than through the API,
 	// because an end-to-end test cannot distinguish this refusal from the
 	// upstream quorum check that fires first.
+	subject := op.subject(stage, bucket, object)
 	if landed < dataBlocks {
-		storageLogIf(ctx, fmt.Errorf(
-			"multipart write-set shortfall at %s on %s/%s part %d: landed on %d of %d attempted drives (lost healthy %v, lost unhealthy %v, data blocks %d); UNRECOVERABLE, refusing the part because it could not be reconstructed from parity",
-			stage, bucket, object, partID, landed, attempted, lostHealthy, lostUnhealthy, dataBlocks))
+		what := "the part"
+		if op.singlePut {
+			what = "the object"
+		}
+		writeSetLogIf(ctx, fmt.Errorf(
+			"%s: landed on %d of %d attempted drives (lost healthy %v, lost unhealthy %v, data blocks %d); UNRECOVERABLE, refusing %s because it could not be reconstructed from parity",
+			subject, landed, attempted, lostHealthy, lostUnhealthy, dataBlocks, what))
 		return toObjectErr(errErasureWriteQuorum, bucket, object)
 	}
 
@@ -756,9 +807,9 @@ func (er erasureObjects) enforceWriteSet(ctx context.Context, stage, bucket, obj
 	// and queues the repair there, where the object actually exists. Queueing from
 	// here is inert, for the reason given above.
 	if multipartWriteSetEnabled() {
-		storageLogIf(ctx, fmt.Errorf(
-			"multipart write-set shortfall at %s on %s/%s part %d: landed on %d of %d attempted drives (lost healthy %v, lost unhealthy %v); healable, accepted, commit-boundary detection will queue the heal",
-			stage, bucket, object, partID, landed, attempted, lostHealthy, lostUnhealthy))
+		writeSetLogIf(ctx, fmt.Errorf(
+			"%s: landed on %d of %d attempted drives (lost healthy %v, lost unhealthy %v); %s",
+			subject, landed, attempted, lostHealthy, lostUnhealthy, op.healNote()))
 	}
 
 	return nil
