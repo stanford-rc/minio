@@ -4,7 +4,7 @@
 not supported by MinIO, Inc., and it has not been reviewed or endorsed by them.
 
 Modified by The Board of Trustees of the Leland Stanford Junior University,
-Stanford Research Computing, between **2026-02-25 and 2026-09-09**.
+Stanford Research Computing, between **2026-02-25 and 2026-10-12**.
 
 Forked from `github.com/minio/minio` at upstream commit `be7800c81`, dated
 2026-01-05. The Go module path was changed to `github.com/stanford-rc/minio` so
@@ -33,13 +33,41 @@ can be turned off per process without a rebuild:
 | divergence | default | override |
 |---|---|---|
 | minimum multipart part size | 5 GiB, upstream is 5 MiB | `MINIO_MIN_PART_SIZE` |
-| multipart write-set enforcement and commit-set collapse check | on | `MINIO_MULTIPART_WRITESET=off` |
+| write-set shortfall reporting and repair queueing | on | `MINIO_MULTIPART_WRITESET=off` |
 | dangling-object deletion during heal | off, upstream always deletes | `MINIO_DANGLING_DELETE=on` |
 
-The write-set work is the substantive one. It addresses a case where a multipart
-upload could return `200 OK` after a part had landed on fewer drives than the
-write quorum required, leaving an object that reads correctly until one more
-shard is lost.
+The write-set work is the substantive one. MinIO commits a multipart upload in
+two phases. Each part's shards are written to a staging area as the part is
+uploaded, and `CompleteMultipartUpload` then renames the staged data directory
+into place on each drive. Each phase succeeds once a write quorum of drives
+accepts it, and upstream never compares which drives took which part. A part
+admitted on exactly as many drives as it has data blocks can therefore be
+committed on a write quorum that leaves out one of the drives it depends on.
+That part cannot be read back, and upstream returns `200 OK` for the object.
+
+The fork fails that commit. When the drives that committed leave any part below
+its data blocks, `CompleteMultipartUpload` returns an error, so the client knows,
+and the surviving staging shards are kept for recovery. This check runs whatever
+`MINIO_MULTIPART_WRITESET` is set to.
+
+A shortfall that leaves the object readable is accepted rather than refused,
+because refusing would make clients re-send terabytes during the bursts in which
+these faults arrive. The fork logs it and queues the repair:
+
+- a multipart part that landed on fewer drives than it was written to is logged
+  as a `write-set shortfall`, and the commit queues a heal for the object
+- a single-part PUT whose shards or `xl.meta` missed a drive is logged the same
+  way, one line for every affected PUT, and MinIO's own repair queue heals it
+  after the commit
+- a single-part PUT written around a drive that was already unavailable logs a
+  line that names no object, so each distinct combination of drives and parity
+  outcome is logged once per node per hour rather than once per object
+
+`MINIO_MULTIPART_WRITESET=off` turns off this logging, single-part and
+multipart alike, and the multipart heal queueing. It leaves the commit failure
+in place. A single-part PUT also drops any drive whose shard write failed
+before the commit, whatever the switch is set to, because that drive's commit
+would fail anyway.
 
 Alongside those:
 
