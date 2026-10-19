@@ -249,6 +249,15 @@ type dataUsageEntryInfo struct {
 	Name   string
 	Parent string
 	Entry  dataUsageEntry
+
+	// ELM 2026-10-17. Set by erasureObjects.nsScanner for the root-cache
+	// saver's instrumentation. Partial marks a progress update, Restored a
+	// bucket's previous entry sent back after a failed scan, and TopLevel
+	// carries a final total's own root figures, the objects stored directly
+	// at the bucket's top level, when the root is not compacted.
+	Partial  bool
+	Restored bool
+	TopLevel *dataUsageEntry
 }
 
 type dataUsageCacheInfo struct {

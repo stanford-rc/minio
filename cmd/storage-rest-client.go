@@ -251,20 +251,77 @@ func (client *storageRESTClient) NSScanner(ctx context.Context, cache dataUsageC
 		return cache, toStorageErr(err)
 	}
 	var final *dataUsageCache
+	// ELM 2026-10-17. Counted for the error log below. A peer still running
+	// without the NSScannerHandler fix can send a stale Final from another
+	// bucket's stream on an update message, so a Final counts as this
+	// bucket's only when its name matches.
+	var messages, withUpdate, withBoth, ownFinals int
+	var otherFinals []string
 	err = st.Results(func(resp *nsScannerResp) error {
+		messages++
 		if resp.Update != nil {
-			select {
-			case <-ctx.Done():
-			case updates <- *resp.Update:
+			withUpdate++
+			if resp.Final != nil {
+				withBoth++
 			}
 		}
 		if resp.Final != nil {
-			final = resp.Final
+			if resp.Final.Info.Name == cache.Info.Name {
+				ownFinals++
+			} else if len(otherFinals) < 4 {
+				otherFinals = append(otherFinals, resp.Final.Info.Name)
+			}
+		}
+		// ELM 2026-10-19. Forward and accept only the fields that belong
+		// to this bucket's stream; see elmNSScannerMessage.
+		update, own := elmNSScannerMessage(resp, cache.Info.Name)
+		if update != nil {
+			select {
+			case <-ctx.Done():
+			case updates <- *update:
+			}
+		}
+		if own != nil {
+			final = own
+		}
+		// ELM 2026-10-17. A patched peer never sets both fields, nor sends
+		// a Final for another bucket. Either one means the peer runs an
+		// unpatched build; logged at most hourly per remote drive.
+		if (resp.Update != nil && resp.Final != nil) || (resp.Final != nil && resp.Final.Info.Name != cache.Info.Name) {
+			scannerLogOnceIf(ctx, fmt.Errorf("data-scanner: NSScanner stream from %s carried a stale field from a pooled response; that peer is running without the NSScannerHandler fix", client),
+				"elm-nsscanner-stale-"+client.String())
 		}
 		// We can't reuse the response since it is sent upstream.
 		return nil
 	})
 	if err != nil {
+		// ELM 2026-10-17. toStorageErr maps grid disconnects and network
+		// errors to errDiskNotFound, which the scanner's logging drops, so
+		// record the raw error and how far the stream got. With ownFinals
+		// above zero the stream failed after this bucket's final reached
+		// the callback; at zero it may still have arrived and been dropped,
+		// since the grid can cancel a stream while its last message is
+		// buffered. A context.Canceled error with the caller's context still
+		// live is the grid teardown race; with it done, the cycle was
+		// cancelled.
+		ownTotal := "none"
+		if final != nil && final.Info.Name == cache.Info.Name {
+			if r := final.root(); r != nil {
+				f := final.flatten(*r)
+				ownTotal = elmUsageFigures(&f)
+			}
+		}
+		// At most one full line per remote drive per minute; see
+		// elmStreamFailureLine.
+		// A cancelled cycle is not logged here; the scanner loop reports it
+		// once per drive.
+		class := fmt.Sprintf("%T: %v, caller context %v", err, err, ctx.Err())
+		if ctx.Err() == nil {
+			if full, earlier := elmStreamFailureLine(client.String(), class, time.Now()); full {
+				scannerLogAlwaysIf(ctx, fmt.Errorf("data-scanner: NSScanner stream for %s cycle %d on %s failed after %d messages (%d with an update, %d with update and final, %d finals for this bucket, finals for other buckets %q), own final %s, caller context %v, suppressed since the last line for this peer: %s: %T: %w",
+					cache.Info.Name, cache.Info.NextCycle, client, messages, withUpdate, withBoth, ownFinals, otherFinals, ownTotal, ctx.Err(), earlier, err, err))
+			}
+		}
 		return cache, toStorageErr(err)
 	}
 	if final == nil {

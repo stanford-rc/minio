@@ -579,7 +579,9 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 	objAPI := newObjectLayerFn()
 	// object layer not initialized, return.
 	if objAPI == nil {
-		return cache, errServerNotInitialized
+		// ELM 2026-10-17. Assigned so the deferred scanner trace records it.
+		err = errServerNotInitialized
+		return cache, err
 	}
 
 	poolIdx, setIdx, _ := s.GetDiskLoc()

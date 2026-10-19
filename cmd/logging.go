@@ -136,6 +136,12 @@ func scannerLogIf(ctx context.Context, err error, errKind ...any) {
 	logger.LogIf(ctx, "scanner", err, errKind...)
 }
 
+// scannerLogAlwaysIf logs err even when it is context.Canceled or
+// "drive not found", which scannerLogIf drops silently.
+func scannerLogAlwaysIf(ctx context.Context, err error, errKind ...any) {
+	logger.LogAlwaysIf(ctx, "scanner", err, errKind...)
+}
+
 func scannerLogOnceIf(ctx context.Context, err error, id string, errKind ...any) {
 	logger.LogOnceIf(ctx, "scanner", err, id, errKind...)
 }

@@ -443,6 +443,13 @@ func (er erasureObjects) nsScanner(ctx context.Context, buckets []BucketInfo, wa
 		defer t.Stop()
 		defer saverWg.Done()
 		var lastSave time.Time
+		// ELM 2026-10-17. Progress figures by bucket: the latest one the
+		// root cache holds, and the one the last save published. A bucket's
+		// entries leave both maps when its final total or restored entry
+		// arrives.
+		partial := map[string]dataUsageEntry{}
+		published := map[string]dataUsageEntry{}
+		var contradicted elmPartialSummary
 
 		for {
 			select {
@@ -452,16 +459,56 @@ func (er erasureObjects) nsScanner(ctx context.Context, buckets []BucketInfo, wa
 				}
 				scannerLogOnceIf(ctx, cache.save(ctx, er, dataUsageCacheName), "nsscanner-cache-update")
 				updates <- cache.clone()
+				for name, e := range partial {
+					published[name] = e
+				}
 
 				lastSave = cache.Info.LastUpdate
 			case v, ok := <-bucketResults:
 				if !ok {
+					// ELM 2026-10-17. A bucket still here kept a progress
+					// figure as its total: a failed scan with no previous
+					// entry to restore, or a cancelled cycle.
+					if len(partial) > 0 {
+						names := make([]string, 0, min(len(partial), 10))
+						for name := range partial {
+							if len(names) == cap(names) {
+								break
+							}
+							names = append(names, name)
+						}
+						elmScannerInfo("data-scanner: cycle %d ended with a progress figure as the total for %d buckets, including %q",
+							wantCycle, len(partial), names)
+					}
+					if line := contradicted.line(wantCycle); line != "" {
+						elmScannerInfo("%s", line)
+					}
 					// Save final state...
 					cache.Info.NextCycle = wantCycle
 					cache.Info.LastUpdate = time.Now()
 					scannerLogOnceIf(ctx, cache.save(ctx, er, dataUsageCacheName), "nsscanner-channel-closed")
 					updates <- cache.clone()
 					return
+				}
+				// ELM 2026-10-17. Count each published progress figure that
+				// the bucket's total then contradicted, for the cycle's
+				// summary, and log it in detail at most daily per bucket.
+				if v.Partial {
+					partial[v.Name] = v.Entry
+				} else {
+					if p, ok := published[v.Name]; ok && elmUsageDiffers(p, v.Entry) {
+						contradicted.add(v.Name, p, v.Entry)
+						if elmPartialDetailDue(elmScanKey(er, v.Name), time.Now()) {
+							what := "final"
+							if v.Restored {
+								what = "scan failed, previous entry restored"
+							}
+							elmScannerInfo("data-scanner: cycle %d: a root-cache save published %s for %s; %s %s, top level %s (logged at most daily per bucket)",
+								wantCycle, elmUsageFigures(&p), v.Name, what, elmUsageFigures(&v.Entry), elmUsageFigures(v.TopLevel))
+						}
+					}
+					delete(partial, v.Name)
+					delete(published, v.Name)
 				}
 				cache.replace(v.Name, v.Parent, v.Entry)
 				cache.Info.LastUpdate = time.Now()
@@ -485,12 +532,51 @@ func (er erasureObjects) nsScanner(ctx context.Context, buckets []BucketInfo, wa
 			defer wg.Done()
 			disk := disks[i]
 
+			// ELM 2026-10-17. A drive that drops out mid-cycle fails every
+			// remaining bucket at once, so only its first failure in a
+			// cycle is logged in full and the rest are summed on exit.
+			// A cancelled cycle is not a failure of the bucket being
+			// scanned, and is reported once, as information.
+			// Failures extend their buckets' runs of failed scans only
+			// when the cycle ends, and only if the drive's failures were
+			// not drive-wide; see elmDriveWide.
+			var attempted, failures, failuresForwarded int
+			var lastFailure error
+			var furtherFailed []string // up to 10 names, after the first failure
+			var cancelledDuring string
+			var runFailures []elmPendingScanFailure
+			defer func() {
+				driveWide := elmDriveWide(failures, attempted)
+				if failures > 1 {
+					runs := "runs of failed scans extended"
+					if driveWide {
+						runs = "drive-wide, runs of failed scans not extended"
+					}
+					scannerLogAlwaysIf(ctx, fmt.Errorf("data-scanner: cycle %d on %s: %d further bucket scans failed after the first, of %d attempted, %d of them with progress updates forwarded, including %q; %s; last error: %w",
+						wantCycle, disk, failures-1, attempted, failuresForwarded, furtherFailed, runs, lastFailure))
+				}
+				if !driveWide {
+					for _, f := range runFailures {
+						if n, firstCycle, since, log := elmScanFailed(elmScanKey(er, f.bucket), wantCycle, f.at); log {
+							scannerLogAlwaysIf(ctx, fmt.Errorf("data-scanner: %s has failed its scan %d consecutive cycles since cycle %d at %s; root cache %s; last error: %w",
+								f.bucket, n, firstCycle, since.UTC().Format(time.RFC3339), f.rootNow, f.err))
+						}
+					}
+				}
+				if cancelledDuring != "" {
+					elmScannerInfo("data-scanner: cycle %d on %s cancelled (%v) during the scan of %s",
+						wantCycle, disk, context.Cause(ctx), cancelledDuring)
+				}
+			}()
+
 			for bucket := range bucketCh {
 				select {
 				case <-ctx.Done():
 					return
 				default:
 				}
+
+				attempted++ // ELM 2026-10-19, for elmDriveWide.
 
 				// Load cache for bucket
 				cacheName := pathJoin(bucket.Name, dataUsageCacheName)
@@ -511,6 +597,10 @@ func (er erasureObjects) nsScanner(ctx context.Context, buckets []BucketInfo, wa
 				// Collect updates.
 				updates := make(chan dataUsageEntry, 1)
 				var wg sync.WaitGroup
+				// ELM 2026-10-17. Counted for the error log below; read only
+				// after wg.Wait.
+				var forwarded int
+				var lastForwarded dataUsageEntry
 				wg.Add(1)
 				go func(name string) {
 					defer wg.Done()
@@ -518,19 +608,26 @@ func (er erasureObjects) nsScanner(ctx context.Context, buckets []BucketInfo, wa
 						select {
 						case <-ctx.Done():
 						case bucketResults <- dataUsageEntryInfo{
-							Name:   name,
-							Parent: dataUsageRoot,
-							Entry:  update,
+							Name:    name,
+							Parent:  dataUsageRoot,
+							Entry:   update,
+							Partial: true,
 						}:
+							forwarded++
+							lastForwarded = update
 						}
 					}
 				}(cache.Info.Name)
 				// Calc usage
 				before := cache.Info.LastUpdate
 				var err error
+				scanStart := time.Now() // ELM 2026-10-17, for the error log below.
 				cache, err = disk.NSScanner(ctx, cache, updates, healScanMode, nil)
+				scanTook := time.Since(scanStart)
 				if err != nil {
+					saved := false // ELM 2026-10-17, for the error log below.
 					if !cache.Info.LastUpdate.IsZero() && cache.Info.LastUpdate.After(before) {
+						saved = true
 						scannerLogIf(ctx, cache.save(ctx, er, cacheName))
 					} else {
 						scannerLogIf(ctx, err)
@@ -540,22 +637,92 @@ func (er erasureObjects) nsScanner(ctx context.Context, buckets []BucketInfo, wa
 					// updates-collector goroutine still
 					// holds a reference to this.
 					wg.Wait()
+					// ELM 2026-10-19. The root cache cannot be saved on a
+					// done context, so a restore would not persist.
+					if ctx.Err() != nil {
+						cancelledDuring = bucket.Name
+						continue
+					}
+					// ELM 2026-10-17. On this path the bucket's flattened
+					// total is never sent. Any progress update already
+					// forwarded is a partial sum that would stand as the
+					// bucket's total until its next successful scan, so the
+					// bucket's previous entry is sent back in its place. With
+					// no previous entry, a new bucket, the partial sum stays.
+					// scannerLogIf above drops context.Canceled and "drive
+					// not found", which covers grid disconnects, so failures
+					// are logged here.
+					prev := oldCache.find(bucket.Name)
+					var rootNow string
+					switch {
+					case forwarded == 0:
+						rootNow = "keeps the previous entry " + elmUsageFigures(prev)
+					case prev == nil:
+						rootNow = "keeps the last update, no previous entry"
+					default:
+						rootNow = "restored to the previous entry " + elmUsageFigures(prev)
+					}
+					if forwarded > 0 && prev != nil {
+						select {
+						case <-ctx.Done():
+							cancelledDuring = bucket.Name
+							continue
+						case bucketResults <- dataUsageEntryInfo{
+							Name:     bucket.Name,
+							Parent:   dataUsageRoot,
+							Entry:    *prev,
+							Restored: true,
+						}:
+						}
+					}
+					failures++
+					lastFailure = err
+					if forwarded > 0 {
+						failuresForwarded++
+					}
+					if failures > 1 && len(furtherFailed) < 10 {
+						furtherFailed = append(furtherFailed, bucket.Name)
+					}
+					runFailures = append(runFailures, elmPendingScanFailure{bucket: bucket.Name, at: time.Now(), rootNow: rootNow, err: err})
+					if failures == 1 {
+						cacheSaved := "per-bucket cache not saved"
+						if saved {
+							cacheSaved = "per-bucket cache saved"
+						}
+						var last *dataUsageEntry
+						if forwarded > 0 {
+							last = &lastForwarded
+						}
+						scannerLogAlwaysIf(ctx, fmt.Errorf("data-scanner: %s cycle %d on %s failed after %s, flattened total not sent, %s; %d updates forwarded, last %s; root cache %s: %w",
+							bucket.Name, wantCycle, disk, scanTook.Round(time.Millisecond), cacheSaved, forwarded, elmUsageFigures(last), rootNow, err))
+					}
 					continue
 				}
 
 				wg.Wait()
+				// ELM 2026-10-17. Log the end of a run of failed scans long
+				// enough to have been logged.
+				if n, since := elmScanSucceeded(elmScanKey(er, bucket.Name)); n >= elmScanFailureFirst {
+					scannerLogAlwaysIf(ctx, fmt.Errorf("data-scanner: %s scanned successfully in cycle %d after %d consecutive failed cycles over %s",
+						bucket.Name, wantCycle, n, time.Since(since).Round(time.Second)))
+				}
 				// Flatten for upstream, but save full state.
 				var root dataUsageEntry
+				var topLevel *dataUsageEntry // ELM 2026-10-17, for the saver's log.
 				if r := cache.root(); r != nil {
 					root = cache.flatten(*r)
+					if !r.Compacted {
+						topLevel = &dataUsageEntry{Size: r.Size, Objects: r.Objects, Versions: r.Versions}
+					}
 				}
 				select {
 				case <-ctx.Done():
 					return
 				case bucketResults <- dataUsageEntryInfo{
-					Name:   cache.Info.Name,
-					Parent: dataUsageRoot,
-					Entry:  root,
+					Name:     cache.Info.Name,
+					Parent:   dataUsageRoot,
+					Entry:    root,
+					TopLevel: topLevel,
 				}:
 				}
 

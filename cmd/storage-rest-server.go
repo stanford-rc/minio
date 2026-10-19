@@ -61,7 +61,7 @@ var (
 	storageDeleteFileRPC       = grid.NewSingleHandler[*DeleteFileHandlerParams, grid.NoPayload](grid.HandlerDeleteFile, func() *DeleteFileHandlerParams { return &DeleteFileHandlerParams{} }, grid.NewNoPayload).AllowCallRequestPool(true)
 	storageDeleteVersionRPC    = grid.NewSingleHandler[*DeleteVersionHandlerParams, grid.NoPayload](grid.HandlerDeleteVersion, func() *DeleteVersionHandlerParams { return &DeleteVersionHandlerParams{} }, grid.NewNoPayload)
 	storageDiskInfoRPC         = grid.NewSingleHandler[*DiskInfoOptions, *DiskInfo](grid.HandlerDiskInfo, func() *DiskInfoOptions { return &DiskInfoOptions{} }, func() *DiskInfo { return &DiskInfo{} }).WithSharedResponse().AllowCallRequestPool(true)
-	storageNSScannerRPC        = grid.NewStream[*nsScannerOptions, grid.NoPayload, *nsScannerResp](grid.HandlerNSScanner, func() *nsScannerOptions { return &nsScannerOptions{} }, nil, func() *nsScannerResp { return &nsScannerResp{} })
+	storageNSScannerRPC        = grid.NewStream[*nsScannerOptions, grid.NoPayload, *nsScannerResp](grid.HandlerNSScanner, func() *nsScannerOptions { return &nsScannerOptions{} }, nil, func() *nsScannerResp { return &nsScannerResp{} }).WithSharedResponse()
 	storageReadAllRPC          = grid.NewSingleHandler[*ReadAllHandlerParams, *grid.Bytes](grid.HandlerReadAll, func() *ReadAllHandlerParams { return &ReadAllHandlerParams{} }, grid.NewBytes).AllowCallRequestPool(true)
 	storageWriteAllRPC         = grid.NewSingleHandler[*WriteAllHandlerParams, grid.NoPayload](grid.HandlerWriteAll, func() *WriteAllHandlerParams { return &WriteAllHandlerParams{} }, grid.NewNoPayload)
 	storageReadVersionRPC      = grid.NewSingleHandler[*grid.MSS, *FileInfo](grid.HandlerReadVersion, grid.NewMSS, func() *FileInfo { return &FileInfo{} })
@@ -259,8 +259,13 @@ func (s *storageRESTServer) NSScannerHandler(ctx context.Context, params *nsScan
 	go func() {
 		defer wg.Done()
 		for update := range updates {
+			// ELM 2026-10-17. Assign the whole struct, so a response can
+			// never carry a stale Final from another bucket's stream. The
+			// stream is registered WithSharedResponse, so responses are not
+			// returned to the pool either; this keeps the handler safe if
+			// that changes.
 			resp := storageNSScannerRPC.NewResponse()
-			resp.Update = &update
+			*resp = nsScannerResp{Update: &update}
 			out <- resp
 		}
 	}()
@@ -270,8 +275,10 @@ func (s *storageRESTServer) NSScannerHandler(ctx context.Context, params *nsScan
 		return grid.NewRemoteErr(err)
 	}
 	// Send final response.
+	// ELM 2026-10-17. As above: a stale Update from another bucket's
+	// stream would be forwarded by the client under this bucket's name.
 	resp := storageNSScannerRPC.NewResponse()
-	resp.Final = &ui
+	*resp = nsScannerResp{Final: &ui}
 	out <- resp
 	return nil
 }
